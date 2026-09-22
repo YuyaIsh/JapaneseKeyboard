@@ -93,6 +93,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix ".dev"
+        }
         release {
             def releaseSigning = signingConfigs.findByName("release")
             if (releaseSigning?.storeFile) {
