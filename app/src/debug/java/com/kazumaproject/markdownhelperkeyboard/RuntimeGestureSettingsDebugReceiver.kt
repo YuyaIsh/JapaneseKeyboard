@@ -54,7 +54,7 @@ class RuntimeGestureSettingsDebugReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_SET_RUNTIME_GESTURE =
-            "com.kazumaproject.markdownhelperkeyboard.DEBUG_SET_RUNTIME_GESTURE"
+            "${BuildConfig.APPLICATION_ID}.DEBUG_SET_RUNTIME_GESTURE"
         const val EXTRA_FLICK_SENSITIVITY = "flick_sensitivity"
         const val EXTRA_LONG_PRESS_TIMEOUT_MILLIS = "long_press_timeout_millis"
         private const val TAG = "RuntimeGestureDebug"
