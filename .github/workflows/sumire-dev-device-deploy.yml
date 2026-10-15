@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk_path="app/build/outputs/apk/fullStandard/debug/app-fullStandard-debug.apk"
+          apk_path="app/build/outputs/apk/fullStandard/debug/app-full-standard-debug.apk"
           if [[ ! -f "$apk_path" ]]; then
             echo "::error::Expected APK was not produced: $apk_path"
             find app/build/outputs/apk -type f -name '*.apk' -print || true
