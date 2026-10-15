@@ -60,6 +60,14 @@ jobs:
           --no-daemon
           --max-workers=1
 
+      - name: Upload Sumire Dev APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sumire-dev-apk
+          path: app/build/outputs/apk/fullStandard/debug/app-full-standard-debug.apk
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Verify Android tooling and exactly one device
         id: device
         shell: bash
