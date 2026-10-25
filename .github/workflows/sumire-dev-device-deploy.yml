@@ -3,13 +3,7 @@ name: Sumire Dev Device Deploy
 on:
   push:
     branches:
-      - 'YuyaIsh/sumire-dev-bootstrap'
-  workflow_dispatch:
-    inputs:
-      install_adb:
-        description: Install only when exactly one authorized ADB device is connected
-        type: boolean
-        default: false
+      - 'main'
 
 permissions:
   contents: read
@@ -20,6 +14,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.repository == 'YuyaIsh/JapaneseKeyboard' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     name: Publish Sumire Dev prerelease
     permissions:
       contents: write
@@ -106,7 +101,7 @@ jobs:
             --notes "Sumire Dev (.dev), fullStandardDebug. versionCode=$expected_code; versionName=$DEV_TAG. Commit: $GITHUB_SHA. Obtainium: add https://github.com/YuyaIsh/JapaneseKeyboard and enable pre-releases."
 
       - name: Verify Android tooling and exactly one device
-        if: ${{ inputs.install_adb == true || vars.SUMIRE_ADB_INSTALL == 'true' }}
+        if: ${{ vars.SUMIRE_ADB_INSTALL == 'true' }}
         id: device
         shell: bash
         run: |
