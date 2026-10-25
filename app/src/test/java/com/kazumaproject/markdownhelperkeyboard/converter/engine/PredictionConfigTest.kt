@@ -8,21 +8,18 @@ import org.junit.Test
 class PredictionConfigTest {
 
     @Test
-    fun defaultLookaheadAcceptsExactlyThreeAdditionalCharacters() {
+    fun defaultLookaheadAcceptsExactlySixAdditionalCharacters() {
         val config = PredictionConfig()
 
         assertFalse(config.acceptsJapaneseReading(inputLength = 0, readingLength = 3))
         assertFalse(config.acceptsJapaneseReading(inputLength = 1, readingLength = 3))
         assertTrue(config.acceptsJapaneseReading(inputLength = 2, readingLength = 3))
         assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 2))
-        assertTrue(config.acceptsJapaneseReading(inputLength = 2, readingLength = 5))
-        assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 6))
-        assertTrue(config.acceptsJapaneseReading(inputLength = 3, readingLength = 6))
-        assertFalse(config.acceptsJapaneseReading(inputLength = 3, readingLength = 7))
-        assertTrue(config.acceptsJapaneseReading(inputLength = 5, readingLength = 8))
-        assertFalse(config.acceptsJapaneseReading(inputLength = 5, readingLength = 9))
-        assertTrue(config.acceptsJapaneseReading(inputLength = 7, readingLength = 10))
-        assertFalse(config.acceptsJapaneseReading(inputLength = 7, readingLength = 11))
+        assertTrue(config.acceptsJapaneseReading("おつ".length, "おつかれさまです".length))
+        for (inputLength in listOf(2, 3, 5, 7)) {
+            assertTrue(config.acceptsJapaneseReading(inputLength, inputLength + 6))
+            assertFalse(config.acceptsJapaneseReading(inputLength, inputLength + 7))
+        }
         assertFalse(config.acceptsJapaneseReading(inputLength = 17, readingLength = 18))
     }
 

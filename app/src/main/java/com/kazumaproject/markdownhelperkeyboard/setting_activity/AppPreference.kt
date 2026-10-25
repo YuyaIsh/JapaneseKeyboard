@@ -2046,7 +2046,7 @@ object AppPreference {
     private fun legacyPredictionLookaheadCharacterCount(value: String): Int =
         when (value) {
             "short" -> 1
-            "standard" -> PREDICTION_LOOKAHEAD_CHARACTER_COUNT_DEFAULT
+            "standard" -> 3 // Preserve the legacy profile independently of the default.
             "long" -> PREDICTION_LOOKAHEAD_CHARACTER_COUNT_MAX
             else -> value.toIntOrNull() ?: PREDICTION_LOOKAHEAD_CHARACTER_COUNT_DEFAULT
         }

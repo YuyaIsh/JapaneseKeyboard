@@ -61,7 +61,7 @@
             app:showSeekBarValue="true" />
 
         <SeekBarPreference
-            android:defaultValue="3"
+            android:defaultValue="6"
             android:dependency="japanese_prediction_enable_preference"
             android:key="prediction_lookahead_preference"
             android:max="6"

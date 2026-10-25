@@ -76,6 +76,6 @@ data class PredictionConfig(
         const val MAX_CANDIDATE_LIMIT = 16
         const val MIN_LOOKAHEAD_CHARACTER_COUNT = 1
         const val MAX_LOOKAHEAD_CHARACTER_COUNT = 6
-        const val DEFAULT_LOOKAHEAD_CHARACTER_COUNT = 3
+        const val DEFAULT_LOOKAHEAD_CHARACTER_COUNT = 6
     }
 }
