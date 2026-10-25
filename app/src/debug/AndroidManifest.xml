@@ -34,7 +34,7 @@
             android:name=".RuntimeGestureSettingsDebugReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.kazumaproject.markdownhelperkeyboard.DEBUG_SET_RUNTIME_GESTURE" />
+                <action android:name="${applicationId}.DEBUG_SET_RUNTIME_GESTURE" />
             </intent-filter>
         </receiver>
     </application>
