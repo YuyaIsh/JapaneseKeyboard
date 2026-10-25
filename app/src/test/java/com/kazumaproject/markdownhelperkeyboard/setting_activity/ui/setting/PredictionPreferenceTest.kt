@@ -35,6 +35,8 @@ class PredictionPreferenceTest {
         val snapshot = ImePreferencesSnapshot.from(AppPreference)
 
         assertEquals(PredictionConfig(), snapshot.predictionConfig)
+        assertEquals(6, snapshot.predictionConfig.lookaheadCharacterCount)
+        assertTrue(snapshot.predictionConfig.acceptsJapaneseReading("おつ".length, "おつかれさまです".length))
         assertEquals(4, snapshot.nBest)
         assertEquals(4, snapshot.userDictionaryPredictionCandidateLimit)
         assertEquals(4, snapshot.learnDictionaryPredictionCandidateLimit)
@@ -126,6 +128,30 @@ class PredictionPreferenceTest {
     }
 
     @Test
+    fun storedLookaheadIsPreservedAndNewSnapshotsReflectChanges() {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val key = "prediction_lookahead_preference"
+        for (stored in 1..6) {
+            preferences.edit().putInt(key, stored).commit()
+            AppPreference.init(context)
+            val before = ImePreferencesSnapshot.from(AppPreference)
+            assertEquals(stored, before.predictionConfig.lookaheadCharacterCount)
+            val screen = PreferenceManager(context).inflateFromResource(
+                context, R.xml.pref_conversion_engine, null,
+            )
+            assertEquals(stored, screen.findPreference<androidx.preference.SeekBarPreference>(key)?.value)
+            assertEquals(stored, preferences.getInt(key, -1))
+
+            val updated = if (stored == 6) 1 else 6
+            AppPreference.prediction_lookahead_character_count_preference = updated
+            assertEquals(stored, before.predictionConfig.lookaheadCharacterCount)
+            assertEquals(updated, ImePreferencesSnapshot.from(AppPreference).predictionConfig.lookaheadCharacterCount)
+        }
+        preferences.edit().remove(key).commit()
+        assertEquals(6, ImePreferencesSnapshot.from(AppPreference).predictionConfig.lookaheadCharacterCount)
+    }
+
+    @Test
     fun legacyLookaheadProfilesAreMigratedToPersistedIntegers() {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val cases = mapOf("short" to 1, "standard" to 3, "long" to 6)
@@ -198,6 +224,7 @@ class PredictionPreferenceTest {
         )
         assertEquals(1, lookahead?.min)
         assertEquals(6, lookahead?.max)
+        assertEquals(6, lookahead?.value)
         assertTrue(lookahead?.showSeekBarValue == true)
 
         listOf(
