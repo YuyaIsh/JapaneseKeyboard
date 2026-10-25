@@ -3,19 +3,30 @@ name: Sumire Dev Device Deploy
 on:
   push:
     branches:
-      - 'YuyaIsh/**'
+      - 'YuyaIsh/sumire-dev-bootstrap'
   workflow_dispatch:
+    inputs:
+      install_adb:
+        description: Install only when exactly one authorized ADB device is connected
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: sumire-dev-device-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build and install on the Sumire device
+    name: Publish Sumire Dev prerelease
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      DEV_TAG: 1.7.119-dev.${{ github.run_number }}
     runs-on: [self-hosted, linux, x64, sumire-device]
     timeout-minutes: 60
 
@@ -51,24 +62,51 @@ jobs:
             echo "$cmake_bin"
           } >> "$GITHUB_PATH"
 
+      - name: Verify persistent debug signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$HOME/.android/debug.keystore"
+          test -f "$keystore" || { echo "::error::Existing debug keystore missing: $keystore; refusing to generate a new identity."; exit 1; }
+          echo "Debug keystore: $keystore (user: $(id -un))"
+          fingerprint="$(keytool -exportcert -keystore "$keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)"
+          test "$fingerprint" = "ad2b22c9b9847ab7070bc8bd31328996044774f57956aa1c1700e0474395e107"
+          echo "Debug certificate SHA-256: $fingerprint"
+          if gh release view "$DEV_TAG" >/dev/null 2>&1; then
+            echo "::error::Release $DEV_TAG already exists; refusing to republish. Push a new commit."
+            exit 1
+          fi
+
       - name: Build fullStandardDebug
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: >-
           ./gradlew :app:assembleFullStandardDebug
+          -PsumireDevBuild=${{ github.run_number }}
           --stacktrace
           --no-daemon
           --max-workers=1
 
-      - name: Upload Sumire Dev APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: sumire-dev-apk
-          path: app/build/outputs/apk/fullStandard/debug/app-full-standard-debug.apk
-          retention-days: 7
-          if-no-files-found: error
+      - name: Verify APK and publish prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/fullStandard/debug/app-full-standard-debug.apk"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          build_tools="$(find "$sdk_root/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          badging="$("$build_tools/aapt" dump badging "$apk")"
+          printf '%s\n' "${badging%%$'\n'*}"
+          expected_code="$((1000000 + GITHUB_RUN_NUMBER))"
+          [[ "$badging" == *"package: name='com.kazumaproject.markdownhelperkeyboard.dev' versionCode='$expected_code' versionName='$DEV_TAG'"* ]]
+          certificate="$("$build_tools/apksigner" verify --print-certs "$apk")"
+          echo "$certificate"
+          [[ "$certificate" == *"Signer #1 certificate SHA-256 digest: ad2b22c9b9847ab7070bc8bd31328996044774f57956aa1c1700e0474395e107"* ]]
+          gh release create "$DEV_TAG" "$apk" \
+            --target "$GITHUB_SHA" --prerelease --title "$DEV_TAG" \
+            --notes "Sumire Dev (.dev), fullStandardDebug. versionCode=$expected_code; versionName=$DEV_TAG. Commit: $GITHUB_SHA. Obtainium: add https://github.com/YuyaIsh/JapaneseKeyboard and enable pre-releases."
 
       - name: Verify Android tooling and exactly one device
+        if: ${{ inputs.install_adb == true || vars.SUMIRE_ADB_INSTALL == 'true' }}
         id: device
         shell: bash
         run: |
@@ -82,9 +120,8 @@ jobs:
             adb devices | awk 'NR > 1 && NF >= 2 { print $1 "\t" $2 }'
           )
           if (( ${#adb_devices[@]} == 0 )); then
-            echo "::error::Expected exactly one connected ADB device, found 0."
-            adb devices -l
-            exit 1
+            echo "No ADB device connected; prerelease is available through Obtainium."
+            exit 0
           fi
           if (( ${#adb_devices[@]} != 1 )); then
             echo "::error::Expected exactly one connected ADB device, found ${#adb_devices[@]}."
@@ -101,6 +138,7 @@ jobs:
           echo "serial=$serial" >> "$GITHUB_OUTPUT"
 
       - name: Install Sumire Dev APK
+        if: ${{ steps.device.outputs.serial != '' }}
         env:
           ADB_SERIAL: ${{ steps.device.outputs.serial }}
           DEV_APPLICATION_ID: com.kazumaproject.markdownhelperkeyboard.dev
