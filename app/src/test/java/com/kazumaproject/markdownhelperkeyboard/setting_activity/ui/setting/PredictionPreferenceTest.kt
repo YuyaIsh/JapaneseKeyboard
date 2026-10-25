@@ -44,6 +44,41 @@ class PredictionPreferenceTest {
     }
 
     @Test
+    fun learnedDictionaryPredictionDefaultsToEnabledWithoutWritingAStoredValue() {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val key = "enable_prediction_search_learn_dictionary_preference"
+
+        assertFalse(preferences.contains(key))
+        assertTrue(AppPreference.enable_prediction_search_learn_dictionary_preference)
+        assertTrue(ImePreferencesSnapshot.from(AppPreference).enablePredictionSearchLearnDictionaryPreference)
+        assertFalse(preferences.contains(key))
+
+        val screen = PreferenceManager(context).inflateFromResource(
+            context, R.xml.pref_dictionary, null,
+        )
+        assertTrue(screen.findPreference<androidx.preference.SwitchPreferenceCompat>(key)?.isChecked == true)
+    }
+
+    @Test
+    fun storedLearnedDictionaryPredictionChoiceSurvivesInitializationAndScreenInflation() {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val key = "enable_prediction_search_learn_dictionary_preference"
+
+        for (stored in listOf(false, true)) {
+            preferences.edit().putBoolean(key, stored).commit()
+            AppPreference.init(context)
+
+            assertEquals(stored, AppPreference.enable_prediction_search_learn_dictionary_preference)
+            assertEquals(stored, ImePreferencesSnapshot.from(AppPreference).enablePredictionSearchLearnDictionaryPreference)
+            val screen = PreferenceManager(context).inflateFromResource(
+                context, R.xml.pref_dictionary, null,
+            )
+            assertEquals(stored, screen.findPreference<androidx.preference.SwitchPreferenceCompat>(key)?.isChecked)
+            assertEquals(stored, preferences.getBoolean(key, !stored))
+        }
+    }
+
+    @Test
     fun predictionSettingsArePersistedInTheImeSnapshot() {
         AppPreference.japanese_prediction_enable_preference = false
         AppPreference.english_prediction_enable_preference = false
