@@ -16,6 +16,19 @@ android {
         localProperties.load(new FileInputStream(localPropertiesFile))
     }
 
+    // Only the Obtainium distribution opts in; normal debug/release builds are unchanged.
+    def sumireDevBuild = providers.gradleProperty('sumireDevBuild').orNull
+    if (sumireDevBuild != null) {
+        if (!(sumireDevBuild ==~ /[1-9][0-9]*/) || sumireDevBuild.toLong() > 2099000000L) {
+            throw new GradleException("Invalid sumireDevBuild: ${sumireDevBuild}")
+        }
+        def debugKeystore = file("${System.getProperty('user.home')}/.android/debug.keystore")
+        if (!debugKeystore.isFile()) {
+            throw new GradleException("Existing debug keystore required: ${debugKeystore}")
+        }
+        signingConfigs.debug.storeFile = debugKeystore
+    }
+
     signingConfigs {
         release {
             if (localProperties['KEYSTORE_FILE']) {
@@ -149,6 +162,10 @@ android {
 
     applicationVariants.configureEach { variant ->
         variant.outputs.each { output ->
+            if (sumireDevBuild != null && variant.name == 'fullStandardDebug') {
+                output.versionCodeOverride = 1000000 + sumireDevBuild.toInteger()
+                output.versionNameOverride = "1.7.119-dev.${sumireDevBuild}"
+            }
             def flavorPrefix = variant.flavorName ? "${variant.flavorName}-" : ""
             // 分割モードが有効な場合のみ実行
             if (shouldSplitApks) {
