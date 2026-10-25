@@ -42,13 +42,13 @@
     <PreferenceCategory android:title="@string/prediction_behavior_category_title">
 
         <SeekBarPreference
-            android:defaultValue="3"
+            android:defaultValue="2"
             android:dependency="japanese_prediction_enable_preference"
             android:key="prediction_minimum_input_length_preference"
             android:max="8"
             android:summary="@string/prediction_minimum_input_length_summary"
             android:title="@string/prediction_minimum_input_length_title"
-            app:min="3"
+            app:min="2"
             app:showSeekBarValue="true" />
 
         <SeekBarPreference

@@ -11,7 +11,12 @@ class PredictionConfigTest {
     fun defaultLookaheadAcceptsExactlyThreeAdditionalCharacters() {
         val config = PredictionConfig()
 
-        assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 3))
+        assertFalse(config.acceptsJapaneseReading(inputLength = 0, readingLength = 3))
+        assertFalse(config.acceptsJapaneseReading(inputLength = 1, readingLength = 3))
+        assertTrue(config.acceptsJapaneseReading(inputLength = 2, readingLength = 3))
+        assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 2))
+        assertTrue(config.acceptsJapaneseReading(inputLength = 2, readingLength = 5))
+        assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 6))
         assertTrue(config.acceptsJapaneseReading(inputLength = 3, readingLength = 6))
         assertFalse(config.acceptsJapaneseReading(inputLength = 3, readingLength = 7))
         assertTrue(config.acceptsJapaneseReading(inputLength = 5, readingLength = 8))
@@ -19,6 +24,15 @@ class PredictionConfigTest {
         assertTrue(config.acceptsJapaneseReading(inputLength = 7, readingLength = 10))
         assertFalse(config.acceptsJapaneseReading(inputLength = 7, readingLength = 11))
         assertFalse(config.acceptsJapaneseReading(inputLength = 17, readingLength = 18))
+    }
+
+    @Test
+    fun explicitMinimumInputLengthsAreRespected() {
+        for (minimum in 3..8) {
+            val config = PredictionConfig(minimumInputLength = minimum)
+            assertFalse(config.acceptsJapaneseReading(minimum - 1, minimum + 1))
+            assertTrue(config.acceptsJapaneseReading(minimum, minimum + 1))
+        }
     }
 
     @Test
@@ -36,6 +50,7 @@ class PredictionConfigTest {
     fun disabledJapanesePredictionRejectsCompletions() {
         val config = PredictionConfig(japanesePredictionEnabled = false)
 
+        assertFalse(config.acceptsJapaneseReading(inputLength = 2, readingLength = 3))
         assertFalse(config.acceptsJapaneseReading(inputLength = 3, readingLength = 4))
     }
 
@@ -52,7 +67,7 @@ class PredictionConfigTest {
             lookaheadCharacterCount = 99,
         )
 
-        assertEquals(3, belowRange.normalizedMinimumInputLength)
+        assertEquals(2, belowRange.normalizedMinimumInputLength)
         assertEquals(1, belowRange.normalizedSystemCandidateLimit)
         assertEquals(1, belowRange.normalizedLookaheadCharacterCount)
         assertEquals(8, aboveRange.normalizedMinimumInputLength)

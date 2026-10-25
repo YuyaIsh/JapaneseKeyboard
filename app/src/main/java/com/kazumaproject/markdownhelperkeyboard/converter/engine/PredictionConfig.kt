@@ -16,7 +16,7 @@ data class PredictionConfig(
     val japanesePredictionEnabled: Boolean = true,
     val englishPredictionEnabled: Boolean = true,
     val systemDictionaryEnabled: Boolean = true,
-    val minimumInputLength: Int = 3,
+    val minimumInputLength: Int = 2,
     val systemCandidateLimit: Int = 4,
     val lookaheadCharacterCount: Int = DEFAULT_LOOKAHEAD_CHARACTER_COUNT,
     val aggressiveness: PredictionAggressiveness = PredictionAggressiveness.STANDARD,
@@ -69,7 +69,7 @@ data class PredictionConfig(
     }
 
     companion object {
-        const val MIN_INPUT_LENGTH = 3
+        const val MIN_INPUT_LENGTH = 2
         const val MAX_INPUT_LENGTH = 8
         const val MAX_PREDICTION_INPUT_LENGTH = 16
         const val MIN_CANDIDATE_LIMIT = 1
