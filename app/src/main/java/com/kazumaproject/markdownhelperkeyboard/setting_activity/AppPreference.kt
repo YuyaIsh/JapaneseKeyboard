@@ -6,6 +6,7 @@ import android.graphics.Color
 import androidx.core.graphics.toColorInt
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.kazumaproject.core.domain.skin.KeyboardSkinId
 import com.kazumaproject.core.data.clicked_symbol.SymbolMode
@@ -4931,8 +4932,56 @@ object AppPreference {
      * @param replaceAll true の場合は一旦 clear() してから復元（バックアップ復元向け）
      */
     fun importAllFromJson(json: String, replaceAll: Boolean = true) {
+        // Validate and convert every entry before clear()/apply(). Never silently drop data
+        // from an unsupported or malformed backup during a replacement import.
         val backup = try {
-            gson.fromJson(json, PrefBackup::class.java)
+            val root = gson.fromJson(json, JsonObject::class.java)
+            val version = root.get("version")
+            require(version != null && version.isJsonPrimitive &&
+                version.asJsonPrimitive.isNumber && version.asBigDecimal.intValueExact() == 1) {
+                "Unsupported backup version"
+            }
+            val entries = root.get("entries")
+            require(entries != null && entries.isJsonArray) { "Missing backup entries" }
+            PrefBackup(entries = entries.asJsonArray.map { element ->
+                val entry = element.asJsonObject
+                val key = entry.get("key")
+                val type = entry.get("type")
+                require(key != null && key.isJsonPrimitive && key.asJsonPrimitive.isString)
+                require(type != null && type.isJsonPrimitive && type.asJsonPrimitive.isString)
+                val value = entry.get("value")
+                val converted: Any? = when (type.asString) {
+                    "null" -> {
+                        require(value == null || value.isJsonNull)
+                        null
+                    }
+                    "boolean" -> {
+                        require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isBoolean)
+                        value.asBoolean
+                    }
+                    "int", "long", "float" -> {
+                        require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isNumber)
+                        when (type.asString) {
+                            "int" -> value.asBigDecimal.intValueExact()
+                            "long" -> value.asBigDecimal.longValueExact()
+                            else -> value.asFloat.also { require(it.isFinite()) }
+                        }
+                    }
+                    "string" -> {
+                        require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isString)
+                        value.asString
+                    }
+                    "string_set" -> {
+                        require(value != null && value.isJsonArray)
+                        value.asJsonArray.map {
+                            require(it.isJsonPrimitive && it.asJsonPrimitive.isString)
+                            it.asString
+                        }
+                    }
+                    else -> throw IllegalArgumentException("Unsupported backup entry type: ${type.asString}")
+                }
+                PrefEntry(key.asString, type.asString, converted)
+            })
         } catch (e: Exception) {
             throw IllegalArgumentException("Invalid backup json", e)
         }
@@ -4951,10 +5000,6 @@ object AppPreference {
                     "string_set" -> {
                         val list = (e.value as List<*>).filterIsInstance<String>()
                         editor.putStringSet(e.key, list.toSet())
-                    }
-
-                    else -> {
-                        // unknown type は無視（将来バージョン差分で落ちないように）
                     }
                 }
             }
