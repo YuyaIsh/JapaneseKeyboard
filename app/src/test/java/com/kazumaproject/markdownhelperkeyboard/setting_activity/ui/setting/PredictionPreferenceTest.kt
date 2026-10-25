@@ -91,11 +91,38 @@ class PredictionPreferenceTest {
         AppPreference.user_dictionary_prediction_candidate_limit_preference = 0
         AppPreference.learn_dictionary_prediction_candidate_limit_preference = 99
 
-        assertEquals(3, AppPreference.prediction_minimum_input_length_preference)
+        assertEquals(2, AppPreference.prediction_minimum_input_length_preference)
         assertEquals(16, AppPreference.system_prediction_candidate_limit_preference)
         assertEquals(6, AppPreference.prediction_lookahead_character_count_preference)
         assertEquals(1, AppPreference.user_dictionary_prediction_candidate_limit_preference)
         assertEquals(8, AppPreference.learn_dictionary_prediction_candidate_limit_preference)
+    }
+
+    @Test
+    fun storedMinimumIsPreservedAndNewSnapshotsReflectChanges() {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val key = "prediction_minimum_input_length_preference"
+        for (stored in 3..8) {
+            preferences.edit().putInt(key, stored).commit()
+            AppPreference.init(context)
+            val before = ImePreferencesSnapshot.from(AppPreference)
+            assertEquals(stored, before.predictionConfig.minimumInputLength)
+            val screen = PreferenceManager(context).inflateFromResource(
+                context, R.xml.pref_conversion_engine, null,
+            )
+            assertEquals(stored, screen.findPreference<androidx.preference.SeekBarPreference>(key)?.value)
+            assertEquals(stored, preferences.getInt(key, -1))
+
+            AppPreference.prediction_minimum_input_length_preference = 2
+            assertEquals(stored, before.predictionConfig.minimumInputLength)
+            assertEquals(2, ImePreferencesSnapshot.from(AppPreference).predictionConfig.minimumInputLength)
+        }
+        preferences.edit().putInt(key, 1).commit()
+        assertEquals(2, AppPreference.prediction_minimum_input_length_preference)
+        preferences.edit().putInt(key, 99).commit()
+        assertEquals(8, AppPreference.prediction_minimum_input_length_preference)
+        preferences.edit().remove(key).commit()
+        assertEquals(2, ImePreferencesSnapshot.from(AppPreference).predictionConfig.minimumInputLength)
     }
 
     @Test
@@ -160,6 +187,12 @@ class PredictionPreferenceTest {
         CONVERSION_KEYS.forEach { key ->
             assertEquals(key, screen.findPreference<androidx.preference.Preference>(key)?.key)
         }
+        val minimum = screen.findPreference<androidx.preference.SeekBarPreference>(
+            "prediction_minimum_input_length_preference",
+        )
+        assertEquals(2, minimum?.min)
+        assertEquals(8, minimum?.max)
+        assertEquals(2, minimum?.value)
         val lookahead = screen.findPreference<androidx.preference.SeekBarPreference>(
             "prediction_lookahead_preference",
         )

@@ -176,7 +176,7 @@ object AppPreference {
     private val SYSTEM_DICTIONARY_PREDICTION_ENABLE_PREFERENCE =
         Pair("system_dictionary_prediction_enable_preference", true)
     private val PREDICTION_MINIMUM_INPUT_LENGTH_PREFERENCE =
-        Pair("prediction_minimum_input_length_preference", 3)
+        Pair("prediction_minimum_input_length_preference", 2)
     private val SYSTEM_PREDICTION_CANDIDATE_LIMIT_PREFERENCE =
         Pair("system_prediction_candidate_limit_preference", 4)
     private val PREDICTION_LOOKAHEAD_CHARACTER_COUNT_PREFERENCE =
@@ -1992,9 +1992,9 @@ object AppPreference {
         get() = preferences.getInt(
             PREDICTION_MINIMUM_INPUT_LENGTH_PREFERENCE.first,
             PREDICTION_MINIMUM_INPUT_LENGTH_PREFERENCE.second,
-        ).coerceIn(3, 8)
+        ).coerceIn(2, 8)
         set(value) = preferences.edit {
-            it.putInt(PREDICTION_MINIMUM_INPUT_LENGTH_PREFERENCE.first, value.coerceIn(3, 8))
+            it.putInt(PREDICTION_MINIMUM_INPUT_LENGTH_PREFERENCE.first, value.coerceIn(2, 8))
         }
 
     var system_prediction_candidate_limit_preference: Int
