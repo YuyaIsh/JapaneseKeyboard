@@ -722,7 +722,7 @@ object AppPreference {
         Pair("conversion_candidates_romaji_enable_preference", false)
 
     private val LEARN_FIRST_CANDIDATE_DICTIONARY_PREFERENCE =
-        Pair("learn_first_candidate_dictionary_preference", false)
+        Pair("learn_first_candidate_dictionary_preference", true)
 
     private val LEARN_DICTIONARY_ALLOW_MIXED_SYMBOLS_NUMBERS_PREFERENCE =
         Pair("learn_dictionary_allow_mixed_symbols_numbers_preference", true)
