@@ -8,6 +8,46 @@ import java.io.File
 class IMEServiceZeroQueryContractTest {
 
     @Test
+    fun zeroQueryDisplayAndCommitKeepPreferenceAndSecureEditorGuards() {
+        val source = imeServiceSource()
+        for ((start, end) in listOf(
+            "private fun canShowZeroQueryAfterCommit" to "private fun String.isZeroQueryNumberKey",
+            "private fun canCommitZeroQueryCandidate" to "private fun isCurrentInputTypePasswordOrEmailForZeroQuery"
+        )) {
+            val function = source.functionBody(start, end)
+            assertTrue(function.contains("if (!zeroQuerySuggestionPreference) return false"))
+            assertTrue(function.contains("if (inputString.value.isNotEmpty()) return false"))
+            assertTrue(function.contains("if (stringInTail.get().isNotEmpty()) return false"))
+            assertTrue(function.contains("if (isCurrentInputTypePasswordOrEmailForZeroQuery()) return false"))
+            assertTrue(function.contains("if (editorTextSelected)"))
+        }
+        val secureTypes = source.functionBody(
+            "private fun isCurrentInputTypePasswordOrEmailForZeroQuery",
+            "private fun isSelectionActionsShownForCandidateStrip"
+        )
+        assertTrue(secureTypes.contains("currentInputType in passwordTypes"))
+        assertTrue(secureTypes.contains("InputTypeForIME.TextEmailAddress"))
+        assertTrue(secureTypes.contains("InputTypeForIME.TextWebEmailAddress"))
+    }
+
+    @Test
+    fun commitPathInvokesLookupAndRechecksEligibilityBeforeDisplay() {
+        val source = imeServiceSource()
+        val lookup = source.functionBody(
+            "private fun consumePendingZeroQueryAfterCommit",
+            "private fun handleZeroQueryOnUpdateSelection"
+        )
+        val lookupIndex = lookup.indexOf("zeroQueryLookupUseCase.lookup(key)")
+        val displayIndex = lookup.indexOf("zeroQueryVisible = true")
+        assertTrue(lookupIndex > lookup.indexOf("canShowZeroQueryAfterCommit(key)"))
+        assertTrue(lookup.indexOf("canShowZeroQueryAfterCommit(key)", lookupIndex) in lookupIndex until displayIndex)
+        assertTrue(lookup.contains("refreshCandidateStripContent(candidatesShown = false)"))
+        assertTrue(source.contains("rememberZeroQueryKeyAfterCommit(commitWord)"))
+        assertTrue(source.contains("consumePendingZeroQueryAfterCommit()"))
+        assertTrue(source.contains("zeroQuerySuggestionPreference = preferences.zeroQuerySuggestionPreference"))
+    }
+
+    @Test
     fun zeroQueryAfterCommitDoesNotBlockIncognitoMode() {
         val function = imeServiceSource().functionBody(
             start = "private fun canShowZeroQueryAfterCommit",
