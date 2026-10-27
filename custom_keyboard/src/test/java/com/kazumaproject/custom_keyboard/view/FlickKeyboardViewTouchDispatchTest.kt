@@ -155,6 +155,25 @@ class FlickKeyboardViewTouchDispatchTest {
         assertTrue(listener.actions == listOf(KeyAction.Paste))
     }
 
+    @Test
+    fun cursorModeAfterLongPress_usesTouchPositionInsteadOfViewOrigin() {
+        val listener = RecordingKeyboardActionListener()
+        val keyboard = keyboardView(listener)
+        keyboard.setKeyboard(pasteKeyLayout())
+        layoutKeyboard(keyboard)
+        keyboard.dispatchTouch(MotionEvent.ACTION_DOWN, 110f, 60f, 100L, 100L)
+        keyboard.dispatchTouch(MotionEvent.ACTION_MOVE, 100f, 60f, 100L, 200L)
+        // IMEService enters cursor mode from the long-press callback, without another DOWN.
+        keyboard.setCursorMode(true)
+        keyboard.dispatchTouch(MotionEvent.ACTION_MOVE, 98f, 60f, 100L, 700L)
+        assertTrue(listener.actions.isEmpty())
+        keyboard.dispatchTouch(MotionEvent.ACTION_MOVE, 60f, 60f, 100L, 720L)
+        assertTrue(listener.actions == listOf(KeyAction.MoveCursorLeft))
+        keyboard.dispatchTouch(MotionEvent.ACTION_MOVE, 100f, 60f, 100L, 740L)
+        assertTrue(listener.actions == listOf(KeyAction.MoveCursorLeft, KeyAction.MoveCursorRight))
+        keyboard.dispatchTouch(MotionEvent.ACTION_CANCEL, 100f, 60f, 100L, 750L)
+    }
+
     private fun keyboardView(
         listener: FlickKeyboardView.OnKeyboardActionListener
     ): FlickKeyboardView {
