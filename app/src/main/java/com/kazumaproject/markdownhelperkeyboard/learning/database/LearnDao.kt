@@ -59,6 +59,7 @@ interface LearnDao {
         WHERE input >= :prefix AND input < :prefixUpperBound
         ORDER BY CASE WHEN input = :prefix THEN 0 ELSE 1 END,
                  score ASC,
+                 usageCount DESC,
                  lastUsedAt DESC,
                  LENGTH(input) ASC,
                  id DESC
