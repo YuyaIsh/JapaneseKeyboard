@@ -74,4 +74,24 @@ class LearnDaoTest {
         assertEquals(1, result2?.size)
         assertEquals("output2", result2?.get(0)?.out)
     }
+
+    @Test
+    fun predictiveSearchPrefersFrequencyOnlyAfterExactInputAndScore() = runBlocking {
+        dao.insertAll(
+            listOf(
+                LearnEntity(input = "かな", out = "exact", score = 300, usageCount = 1),
+                LearnEntity(input = "かなあ", out = "frequent", score = 0, usageCount = 5, lastUsedAt = 1),
+                LearnEntity(input = "かない", out = "recent", score = 0, usageCount = 1, lastUsedAt = 10),
+                LearnEntity(input = "かなえ", out = "older", score = 0, usageCount = 1, lastUsedAt = 2),
+                LearnEntity(input = "かなう", out = "higherScore", score = 1, usageCount = 100, lastUsedAt = 20),
+                LearnEntity(input = "かに", out = "outsidePrefix", score = 0, usageCount = 100),
+            )
+        )
+
+        val all = dao.predictiveSearchByInput("かな", "かに", 10).map { it.out }
+        val limited = dao.predictiveSearchByInput("かな", "かに", 2).map { it.out }
+
+        assertEquals(listOf("exact", "frequent", "recent", "older", "higherScore"), all)
+        assertEquals(listOf("exact", "frequent"), limited)
+    }
 }
