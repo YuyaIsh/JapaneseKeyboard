@@ -1,4 +1,6 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <SwitchPreferenceCompat android:key="fold_keyboard_enabled" android:title="@string/fold_keyboard_enabled" android:summary="@string/fold_keyboard_summary" android:defaultValue="false" />
+    <ListPreference android:key="fold_keyboard_layout" android:title="@string/fold_keyboard_layout" android:defaultValue="SPLIT" android:dependency="fold_keyboard_enabled" app:useSimpleSummaryProvider="true" />
     <PreferenceCategory android:title="@string/split_keyboard_main">
         <ListPreference android:key="split_keyboard_main_type" android:title="@string/split_keyboard_main" android:defaultValue="TENKEY" app:useSimpleSummaryProvider="true" />
         <ListPreference android:key="split_keyboard_main_custom" android:title="@string/split_keyboard_custom" app:useSimpleSummaryProvider="true" />

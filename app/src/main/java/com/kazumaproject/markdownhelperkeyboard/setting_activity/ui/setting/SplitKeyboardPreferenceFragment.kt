@@ -22,6 +22,10 @@ class SplitKeyboardPreferenceFragment : PreferenceFragmentCompat() {
     }
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_split_keyboard, rootKey)
+        findPreference<ListPreference>(SplitKeyboardSettings.FOLD_LAYOUT)!!.apply {
+            entries = arrayOf(getString(R.string.fold_keyboard_split), getString(R.string.fold_keyboard_left), getString(R.string.fold_keyboard_right))
+            entryValues = FoldKeyboardLayout.entries.map { it.name }.toTypedArray()
+        }
         val types = KeyboardType.entries.filter { it != KeyboardType.SPLIT }
         SplitSlot.entries.forEach { slot ->
             val custom = findPreference<ListPreference>(SplitKeyboardSettings.customKey(slot))!!
