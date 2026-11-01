@@ -363,13 +363,23 @@ class SuggestionAdapter internal constructor(
         candidateEmptyDrawableTextColor = source.candidateEmptyDrawableTextColor
         showCustomTab = false
         candidateItemColorState.setColors(source.candidateItemColorState.backgroundColor, source.candidateItemColorState.pressedBackgroundColor)
-        onItemClickListener = { a, b -> source.onItemClickListener?.invoke(a, b) }
-        onItemLongClickListener = { a, b -> source.onItemLongClickListener?.invoke(a, b) }
+        // DiffUtil can leave an old holder attached until the replacement list commits.
+        // A pane/session handover must also invalidate that holder's captured commands.
+        fun currentCandidate(candidate: Candidate, position: Int) =
+            currentContent.candidatesForClicks().getOrNull(position) == candidate &&
+                source.currentContent.candidatesForClicks().getOrNull(position) == candidate
+        onItemClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemClickListener?.invoke(a, b) }
+        onItemLongClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemLongClickListener?.invoke(a, b) }
         onItemHelperIconClickListener = { a -> source.onItemHelperIconClickListener?.invoke(a) }
         onItemHelperIconLongClickListener = { a -> source.onItemHelperIconLongClickListener?.invoke(a) }
         onShortcutItemClickListener = { a -> source.onShortcutItemClickListener?.invoke(a) }
         onShortcutEntryClickListener = { a -> source.onShortcutEntryClickListener?.invoke(a) }
-        onZeroQueryCandidateClickListener = { a -> source.onZeroQueryCandidateClickListener?.invoke(a) }
+        onZeroQueryCandidateClickListener = { a ->
+            if ((currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true &&
+                (source.currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true) {
+                source.onZeroQueryCandidateClickListener?.invoke(a)
+            }
+        }
         onZeroQueryCloseClickListener = { source.onZeroQueryCloseClickListener?.invoke() }
         onShowSoftKeyboardClick = { source.onShowSoftKeyboardClick?.invoke() }
         val content = if (source.currentContent is CandidateStripContent.CustomLayoutPicker)

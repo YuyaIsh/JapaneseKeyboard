@@ -76,5 +76,7 @@ internal class ComposingTextArbiter(
         canonicalState = CanonicalComposingState.Finished
     }
 
+    fun canonicalText(): CharSequence? = (canonicalState as? CanonicalComposingState.Text)?.value
+
     fun isPreviewVisible(): Boolean = previewVisible
 }

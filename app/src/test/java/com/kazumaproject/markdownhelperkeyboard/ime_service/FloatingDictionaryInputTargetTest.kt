@@ -44,6 +44,7 @@ class FloatingDictionaryInputTargetTest {
         service.appPreference = mock<AppPreference>().apply {
             whenever(undo_enable_preference).thenReturn(true)
         }
+        service.zenzRuntimeClient = mock()
         ReflectionHelpers.setField(service, "listAdapter", mock<FloatingCandidateListAdapter>())
         doAnswer {
             ReflectionHelpers.getField<InputConnection?>(service, "dictionaryInputConnection") ?: appConnection
