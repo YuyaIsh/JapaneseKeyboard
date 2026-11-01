@@ -9,4 +9,10 @@
     <string name="split_keyboard_sub_only">サブのみ</string>
     <string name="split_keyboard_summary">２つのキーボードを自由に配置し、入力と変換候補を共有します</string>
     <string name="split_keyboard_edit_placement">編集アイコンの表示</string>
+    <string name="fold_keyboard_enabled">Fold の開閉に自動で切り替える</string>
+    <string name="fold_keyboard_summary">閉じると通常表示、開くと選択した12キー配置に切り替えます。折りたたみ情報が取得できない場合は画面サイズで判定するため、大画面タブレットでも展開時の配置になります。</string>
+    <string name="fold_keyboard_layout">展開時の配置</string>
+    <string name="fold_keyboard_split">左右２つの12キーフリック</string>
+    <string name="fold_keyboard_left">左寄せ12キーフリック</string>
+    <string name="fold_keyboard_right">右寄せ12キーフリック</string>
 </resources>

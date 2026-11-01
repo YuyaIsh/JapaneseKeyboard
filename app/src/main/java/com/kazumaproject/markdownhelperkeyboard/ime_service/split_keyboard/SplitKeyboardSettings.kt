@@ -31,6 +31,10 @@ class SplitKeyboardSettings(private val prefs: SharedPreferences) {
         require(value.type != KeyboardType.SPLIT)
         prefs.edit().putString(typeKey(slot), value.type.name).putString(customKey(slot), value.customStableId).apply()
     }
+    val foldEnabled: Boolean get() = prefs.getBoolean(FOLD_ENABLED, false)
+    val foldLayout: FoldKeyboardLayout get() = runCatching {
+        FoldKeyboardLayout.valueOf(prefs.getString(FOLD_LAYOUT, "SPLIT")!!)
+    }.getOrDefault(FoldKeyboardLayout.SPLIT)
     val candidates: SplitCandidatePlacement get() = runCatching {
         SplitCandidatePlacement.valueOf(prefs.getString(CANDIDATES, "BOTH")!!)
     }.getOrDefault(SplitCandidatePlacement.BOTH)
@@ -51,6 +55,8 @@ class SplitKeyboardSettings(private val prefs: SharedPreferences) {
             .putFloat("${key}_width", safe.widthDp).putFloat("${key}_height", safe.heightDp).apply()
     }
     companion object {
+        const val FOLD_ENABLED = "fold_keyboard_enabled"
+        const val FOLD_LAYOUT = "fold_keyboard_layout"
         const val EDIT_PLACEMENT = "split_keyboard_edit_placement"
         const val CANDIDATES = "split_keyboard_candidates"
         fun typeKey(slot: SplitSlot) = "split_keyboard_${slot.name.lowercase()}_type"

@@ -2370,6 +2370,19 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         var backgroundPlayer: ExoPlayer? = null,
         var backgroundVideoConfig: KeyboardBackgroundVideoConfig? = null,
     )
+    private var preservingFoldConfiguration = false
+    private var foldMonitor: FoldKeyboardMonitor? = null
+    private var activeFoldLayout: FoldKeyboardLayout? = null
+    private var regularKeyboardType = KeyboardType.TENKEY
+
+    private fun startFoldMonitor() {
+        foldMonitor?.stop()
+        val anchor = window.window?.decorView ?: return
+        foldMonitor = FoldKeyboardMonitor(this, anchor) {
+            if (isInputViewActive) showResolvedKeyboard(regularKeyboardType)
+        }.also { it.start() }
+    }
+
     private var splitController: SplitKeyboardController? = null
     private val splitInputs = linkedMapOf<SplitSlot, SplitInputState>()
     private var activeSplitSlot: SplitSlot? = null
@@ -2458,9 +2471,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         syncSplitPresentation()
     }
 
-    private fun startSplitKeyboard() {
+    private fun startSplitKeyboard(foldLayout: FoldKeyboardLayout? = null) {
         if (splitController != null || splitLoadingJob?.isActive == true) return
         val main = mainLayoutBinding ?: return
+        activeFoldLayout = foldLayout
         disableKeyboardLayoutEditMode()
         stopAllOngoingKeyLongPresses()
         floatingKeyboardView?.dismiss()
@@ -2478,6 +2492,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 val host = checkNotNull(window.window?.decorView) { "IME window is unavailable" }
                 val controller = SplitKeyboardController(main.root.context, host,
                     onActivate = ::activateSplitInput, onInputFinished = ::saveSplitInput,
+                    foldLayout = foldLayout,
                     onGestureChanged = { slot, touching ->
                         splitInputs[slot]?.touching = touching
                         if (!touching) {
@@ -2495,7 +2510,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                     }, colors = ::resolveCandidatePanelColors,
                     onWindowFailure = {
                         stopSplitKeyboard(restoreSurface = true)
-                        showResolvedKeyboard(KeyboardType.TENKEY)
+                        showResolvedKeyboard(KeyboardType.TENKEY, allowFold = false)
                     })
                 splitController = controller
                 // The detached candidate window always owns the original shared adapters.
@@ -2504,8 +2519,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 main.suggestionRecyclerView.adapter = suggestionAdapter
                 main.candidatesRowView.adapter = suggestionAdapterFull
                 controller.setCandidatesDetached(floatingCandidateSurfaceActive)
-                SplitSlot.entries.forEach { slot ->
-                    val configured = splitSettings.selection(slot)
+                (foldLayout?.slots ?: SplitSlot.entries).forEach { slot ->
+                    val configured = if (foldLayout != null) SplitKeyboardSelection() else splitSettings.selection(slot)
                     val selection = configured.resolved(layouts.map { it.stableId }.toSet())
                     if (selection != configured) splitSettings.saveSelection(slot, selection)
                     val binding = FloatingKeyboardLayoutBinding.inflate(LayoutInflater.from(main.root.context))
@@ -2615,7 +2630,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             } catch (failure: Exception) {
                 Timber.e(failure, "Unable to create split keyboard")
                 stopSplitKeyboard(restoreSurface = true)
-                showResolvedKeyboard(KeyboardType.TENKEY)
+                showResolvedKeyboard(KeyboardType.TENKEY, allowFold = false)
             }
         }
     }
@@ -2635,6 +2650,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 state.adapter.setShortcutIconColor(colors.icon)
                 state.adapter.setCandidateEmptyPopupColors(colors.background, colors.text)
             }
+            splitController?.refresh()
         }
     }
 
@@ -2739,6 +2755,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         activeSplitSlot = null
         splitController?.stop()
         splitController = null
+        activeFoldLayout = null
         retiredInputs.forEach {
             it.symbolJob?.cancel()
             it.layoutJob?.cancel()
@@ -3321,6 +3338,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        if (preservingFoldConfiguration && restarting) {
+            super.onStartInput(attribute, restarting)
+            return
+        }
         composingGuide?.stop()
         super.onStartInput(attribute, restarting)
         resetCustomToggleState()
@@ -5456,6 +5477,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onStartInputView(editorInfo: EditorInfo?, restarting: Boolean) {
+        if (preservingFoldConfiguration && restarting) {
+            super.onStartInputView(editorInfo, restarting)
+            isInputViewActive = true
+            return
+        }
         stopSplitKeyboard()
         super.onStartInputView(editorInfo, restarting)
         flickInputPreviewCoordinator.cancel(restore = true)
@@ -5844,6 +5870,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     override fun onWindowShown() {
         super.onWindowShown()
+        startFoldMonitor()
         window.window?.decorView?.post {
             if (isInputViewShown && isKeyboardFloatingMode == true && splitController == null && floatingKeyboardView?.isShowing != true) {
                 applyFloatingModeState(true)
@@ -5853,6 +5880,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onFinishInput() {
+        if (preservingFoldConfiguration) return
+        foldMonitor?.stop()
+        foldMonitor = null
         stopSplitKeyboard()
         if (!dictionaryConfigurationChanging) dictionaryFloats?.endSession()
         composingGuide?.stop()
@@ -5866,6 +5896,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        if (preservingFoldConfiguration) return
+        foldMonitor?.stop()
+        foldMonitor = null
         stopSplitKeyboard()
         if (!dictionaryConfigurationChanging) dictionaryFloats?.endSession()
         composingGuide?.stop()
@@ -5922,6 +5955,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onDestroy() {
+        foldMonitor?.stop()
+        foldMonitor = null
         stopSplitKeyboard()
         dictionaryFloats?.destroy()
         dictionaryFloats = null
@@ -6406,17 +6441,23 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
+        val preserveFoldComposition = splitSettings.foldEnabled &&
+                (activeFoldLayout != null || (foldMonitor?.expanded ?: FoldKeyboardMonitor.isExpanded(this)))
+        // InputMethodService synchronously restarts the same editor from super below.
+        // Keep the shared conversion session and candidate adapters through that restart.
+        preservingFoldConfiguration = preserveFoldComposition
         dictionaryConfigurationChanging = true
         dictionaryFloats?.detach()
         try {
             super.onConfigurationChanged(newConfig)
         } finally {
             dictionaryConfigurationChanging = false
+            preservingFoldConfiguration = false
         }
         mainLayoutBinding?.keyboardTouchEffectContainer?.let { dictionaryFloats?.attach(it) }
         clearZeroQueryAllState(refresh = false)
         collapseShortcutEntryExpansion()
-        when (newConfig.orientation) {
+        if (!preserveFoldComposition) when (newConfig.orientation) {
             Configuration.ORIENTATION_PORTRAIT -> {
                 finishComposingText()
                 setComposingText("", 0)
@@ -12597,7 +12638,16 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         appPreference.save_last_used_keyboard_position_preference = resolvedIndex
     }
 
-    private fun showResolvedKeyboard(type: KeyboardType) {
+    private fun showResolvedKeyboard(requestedType: KeyboardType, allowFold: Boolean = true) {
+        if (allowFold) regularKeyboardType = requestedType
+        val foldLayout = if (allowFold && splitSettings.foldEnabled && (foldMonitor?.expanded ?: FoldKeyboardMonitor.isExpanded(this))) splitSettings.foldLayout else null
+        if (foldLayout != null) {
+            if (activeFoldLayout != foldLayout) stopSplitKeyboard(restoreSurface = true)
+            startSplitKeyboard(foldLayout)
+            return
+        }
+        val type = if (splitSettings.foldEnabled && requestedType == KeyboardType.SPLIT) KeyboardType.TENKEY else requestedType
+        if (activeFoldLayout != null) stopSplitKeyboard(restoreSurface = true)
         if (type == KeyboardType.SPLIT) { startSplitKeyboard(); return }
         stopSplitKeyboard(restoreSurface = true)
         if (qwertyMode.value == TenKeyQWERTYMode.Custom) resetCustomToggleState()
