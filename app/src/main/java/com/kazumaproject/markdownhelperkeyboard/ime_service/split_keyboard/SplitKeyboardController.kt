@@ -25,6 +25,8 @@ internal class SplitKeyboardController(
     private val onWindowFailure: () -> Unit = {},
     private val onGestureChanged: (SplitSlot, Boolean) -> Unit = { _, _ -> },
     private val foldLayout: FoldKeyboardLayout? = null,
+    private val foldBodyHeight: (SplitSlot) -> Int = { 0 },
+    private val foldCandidateHeight: (SplitSlot) -> Int = { 0 },
 ) {
     private val manager = context.getSystemService(WindowManager::class.java)
     private val preferences = PreferenceManager.getDefaultSharedPreferences(context)
@@ -63,6 +65,33 @@ internal class SplitKeyboardController(
                 onGestureChanged(slot, false)
             }
         }
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val pane = panes[slot]
+            if (foldLayout == null || pane == null) {
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+                return
+            }
+            val width = MeasureSpec.getSize(widthMeasureSpec)
+            val bounded = MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED
+            val limit = if (bounded) MeasureSpec.getSize(heightMeasureSpec) else Int.MAX_VALUE
+            pane.candidates.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                if (bounded) MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST)
+                else MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            val candidateHeight = maxOf(pane.candidates.measuredHeight, foldCandidateHeight(slot)).coerceAtMost(limit)
+            pane.scaledBody.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            val desiredHeight = candidateHeight.toLong() + pane.scaledBody.measuredHeight
+            val height = resolveSize(desiredHeight.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), heightMeasureSpec)
+            val visibleCandidateHeight = candidateHeight.coerceAtMost(height)
+            pane.candidates.layoutParams.height = visibleCandidateHeight
+            (pane.scaledBody.layoutParams as LinearLayout.LayoutParams).apply {
+                this.height = pane.scaledBody.measuredHeight.coerceAtMost((height - visibleCandidateHeight).coerceAtLeast(0))
+                weight = 0f
+            }
+            setMeasuredDimension(width, height)
+            pane.contents.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+        }
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
             if (editing) return true
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -93,14 +122,27 @@ internal class SplitKeyboardController(
         val input = InputFrame(slot).apply {
             contentDescription = context.getString(if (slot == SplitSlot.MAIN) R.string.split_keyboard_main else R.string.split_keyboard_sub)
         }
-        val contents = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val contents = object : LinearLayout(context) {
+            init { orientation = VERTICAL }
+            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+                super.onLayout(changed, left, top, right, bottom)
+                if (foldLayout != null) {
+                    // Different language layouts may have different configured heights.
+                    // Keep each keyboard at its requested size and dock both at the bottom.
+                    scaledBody.layout(0, height - scaledBody.measuredHeight, width, height)
+                }
+            }
+        }
         lateinit var candidates: RecyclerView
+        lateinit var scaledBody: SplitKeyboardBody
         var placement = settings.placement(slot, landscape)
         var params: WindowManager.LayoutParams? = null
         var gesture: ComposingGuideGesture? = null
         var gestureStart: SplitPlacement? = null
         var bounds = GuideBounds(0, 0, 1, 1)
         var candidateHeight = dp(58)
+        var dockBodyHeight = -1
+        var dockCandidateHeight = -1
         val horizontalChrome get() = root.contentInsets.let { it.left + it.right }
         val verticalChrome get() = root.contentInsets.let { it.top + it.bottom } + if (showsCandidates(slot)) candidateHeight else 0
         init {
@@ -120,10 +162,15 @@ internal class SplitKeyboardController(
         (candidates.parent as? ViewGroup)?.removeView(candidates)
         pane.candidates = candidates
         pane.contents.addView(candidates, LinearLayout.LayoutParams(-1, dp(58)))
-        val scaledBody = SplitKeyboardBody(context, dp(minimumWidthDp), dp(minimumHeightDp))
+        val scaledBody = SplitKeyboardBody(context, dp(minimumWidthDp), dp(minimumHeightDp),
+            if (foldLayout != null) ({ foldBodyHeight(slot) }) else null)
+        pane.scaledBody = scaledBody
         scaledBody.addView(body)
         pane.contents.addView(scaledBody, LinearLayout.LayoutParams(-1, 0, 1f))
         panes[slot] = pane
+        if (foldLayout != null) {
+            (anchor as ViewGroup).addView(pane.input, FrameLayout.LayoutParams(-1, -2))
+        }
     }
 
     fun start() {
@@ -183,27 +230,17 @@ internal class SplitKeyboardController(
     private fun renderDocked(pane: Pane) {
         val layout = foldLayout ?: return
         if (pane.slot !in layout.slots) return
-        val host = anchor as ViewGroup
-        val availableWidth = host.width
-        val availableHeight = host.height
-        if (availableWidth <= 0 || availableHeight <= 0) return
-        val width = layout.paneWidth(availableWidth, dp(280))
         pane.candidates.isVisible = true
-        pane.candidates.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(availableHeight, View.MeasureSpec.AT_MOST))
-        val candidateHeight = pane.candidates.measuredHeight.coerceAtLeast(dp(58))
-            .coerceAtMost((availableHeight - dp(80)).coerceAtLeast(0))
-        if (pane.candidates.layoutParams.height != candidateHeight) {
-            pane.candidates.layoutParams = pane.candidates.layoutParams.apply { height = candidateHeight }
-        }
         pane.input.setBackgroundColor(colors().background)
-        val params = FrameLayout.LayoutParams(width, -1, Gravity.TOP or Gravity.LEFT).apply {
-            leftMargin = layout.paneX(pane.slot, availableWidth, width)
+        val bodyHeight = foldBodyHeight(pane.slot)
+        val candidateHeight = foldCandidateHeight(pane.slot)
+        if (pane.dockBodyHeight != bodyHeight || pane.dockCandidateHeight != candidateHeight) {
+            pane.dockBodyHeight = bodyHeight
+            pane.dockCandidateHeight = candidateHeight
+            pane.input.requestLayout()
         }
-        if (pane.input.parent == null) host.addView(pane.input, params)
-        else if (pane.input.layoutParams.let { it.width != width || (it as FrameLayout.LayoutParams).leftMargin != params.leftMargin }) {
-            pane.input.layoutParams = params
-        }
+        // Measurement belongs to the ordinary IME hierarchy, including font and width
+        // changes. Do not derive content size from the host's previously laid-out height.
     }
 
     private fun render(pane: Pane) {
