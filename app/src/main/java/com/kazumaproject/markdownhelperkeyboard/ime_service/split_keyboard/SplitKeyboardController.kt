@@ -14,7 +14,7 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.ime_service.composing_guide.*
 import kotlin.math.roundToInt
 
-/** Owns two IME-attached windows; input and keyboard content belong to the service. */
+/** Floating split windows or Fold panes inside the normal IME; input belongs to the service. */
 internal class SplitKeyboardController(
     private val context: Context,
     private val anchor: View,
@@ -40,7 +40,7 @@ internal class SplitKeyboardController(
     private var area = Rect()
     private val coordinates = FloatingWindowCoordinates(manager)
     private var candidatesDetached = false
-    private fun showsCandidates(slot: SplitSlot) = !candidatesDetached && (foldLayout != null || settings.candidates.shows(slot))
+    private fun showsCandidates(slot: SplitSlot) = foldLayout != null || (!candidatesDetached && settings.candidates.shows(slot))
 
     fun setCandidatesDetached(detached: Boolean) {
         if (candidatesDetached == detached) return
@@ -69,8 +69,8 @@ internal class SplitKeyboardController(
                 val candidates = panes[slot]?.candidates
                 keyboardGesture = candidates?.isVisible != true || event.y >= candidates.height
             }
-            // Candidate selection uses the shared composing session, not this pane's mode.
-            if (!keyboardGesture) return super.dispatchTouchEvent(event)
+            // Floating panes share candidates; Fold candidates belong to their own pane.
+            if (!keyboardGesture && foldLayout == null) return super.dispatchTouchEvent(event)
             onActivate(slot)
             if (event.actionMasked == MotionEvent.ACTION_DOWN) onGestureChanged(slot, true)
             return try { super.dispatchTouchEvent(event) } finally {
@@ -86,11 +86,13 @@ internal class SplitKeyboardController(
     private inner class Pane(val slot: SplitSlot, val layoutMinWidth: Int, val layoutMinHeight: Int) {
         val minWidth = 120
         val minHeight = 80
-        val root = FloatingPanelFrame(context, { setEditing(!editing) }, { gesture(this, it) }).apply {
+        val root by lazy { FloatingPanelFrame(context, { setEditing(!editing) }, { gesture(this, it) }).apply {
             applicationWindowView = anchor
             contentDescription = context.getString(if (slot == SplitSlot.MAIN) R.string.split_keyboard_main else R.string.split_keyboard_sub)
+        } }
+        val input = InputFrame(slot).apply {
+            contentDescription = context.getString(if (slot == SplitSlot.MAIN) R.string.split_keyboard_main else R.string.split_keyboard_sub)
         }
-        val input = InputFrame(slot)
         val contents = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         lateinit var candidates: RecyclerView
         var placement = settings.placement(slot, landscape)
@@ -103,8 +105,10 @@ internal class SplitKeyboardController(
         val verticalChrome get() = root.contentInsets.let { it.top + it.bottom } + if (showsCandidates(slot)) candidateHeight else 0
         init {
             input.addView(contents, FrameLayout.LayoutParams(-1, -1))
-            root.contentContainer.addView(input, FrameLayout.LayoutParams(-1, -1))
-            coordinates.observeLegacyOrigin(root, { params }) { if (!disposed) refresh() }
+            if (foldLayout == null) {
+                root.contentContainer.addView(input, FrameLayout.LayoutParams(-1, -1))
+                coordinates.observeLegacyOrigin(root, { params }) { if (!disposed) refresh() }
+            }
 
         }
     }
@@ -143,6 +147,10 @@ internal class SplitKeyboardController(
 
     fun refresh() {
         if (disposed || !anchor.isAttachedToWindow) return
+        if (foldLayout != null) {
+            panes.values.forEach(::renderDocked)
+            return
+        }
         val nextArea = availableArea()
         val nextLandscape = isLandscape()
         if (area != nextArea || nextLandscape != landscape) {
@@ -172,31 +180,44 @@ internal class SplitKeyboardController(
         listOf(SplitSlot.SUB, SplitSlot.MAIN).forEach { panes[it]?.let(::render) }
     }
 
+    private fun renderDocked(pane: Pane) {
+        val layout = foldLayout ?: return
+        if (pane.slot !in layout.slots) return
+        val host = anchor as ViewGroup
+        val availableWidth = host.width
+        val availableHeight = host.height
+        if (availableWidth <= 0 || availableHeight <= 0) return
+        val width = layout.paneWidth(availableWidth, dp(280))
+        pane.candidates.isVisible = true
+        pane.candidates.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(availableHeight, View.MeasureSpec.AT_MOST))
+        val candidateHeight = pane.candidates.measuredHeight.coerceAtLeast(dp(58))
+            .coerceAtMost((availableHeight - dp(80)).coerceAtLeast(0))
+        if (pane.candidates.layoutParams.height != candidateHeight) {
+            pane.candidates.layoutParams = pane.candidates.layoutParams.apply { height = candidateHeight }
+        }
+        pane.input.setBackgroundColor(colors().background)
+        val params = FrameLayout.LayoutParams(width, -1, Gravity.TOP or Gravity.LEFT).apply {
+            leftMargin = layout.paneX(pane.slot, availableWidth, width)
+        }
+        if (pane.input.parent == null) host.addView(pane.input, params)
+        else if (pane.input.layoutParams.let { it.width != width || (it as FrameLayout.LayoutParams).leftMargin != params.leftMargin }) {
+            pane.input.layoutParams = params
+        }
+    }
+
     private fun render(pane: Pane) {
-        if (disposed || (foldLayout != null && pane.slot !in foldLayout.slots)) return
-        pane.root.setHeaderVisible(foldLayout == null && settings.editPlacement.shows(pane.slot))
+        if (disposed) return
+        pane.root.setHeaderVisible(settings.editPlacement.shows(pane.slot))
         pane.root.setColors(colors())
         pane.root.setEditing(editing)
         pane.candidates.isVisible = showsCandidates(pane.slot)
         pane.input.importantForAccessibility = if (editing) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-        val width = if (foldLayout != null) {
-            foldLayout.paneWidth(area.width(), dp(280))
-        } else (dp(pane.placement.widthDp).coerceAtLeast(dp(pane.minWidth)) + pane.horizontalChrome).coerceAtMost(area.width())
-        if (foldLayout != null && showsCandidates(pane.slot)) {
-            // Measure the list itself: font scale and candidate contents can exceed the normal strip.
-            pane.candidates.measure(View.MeasureSpec.makeMeasureSpec((width - pane.horizontalChrome).coerceAtLeast(1), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(area.height(), View.MeasureSpec.AT_MOST))
-            pane.candidateHeight = pane.candidates.measuredHeight.coerceAtLeast(dp(58)).coerceAtMost(area.height())
-            if (pane.candidates.layoutParams.height != pane.candidateHeight) {
-                pane.candidates.layoutParams = pane.candidates.layoutParams.apply { height = pane.candidateHeight }
-            }
-        }
-        val bodyHeight = if (foldLayout != null) dp(240) else dp(pane.placement.heightDp).coerceAtLeast(dp(pane.minHeight))
+        val width = (dp(pane.placement.widthDp).coerceAtLeast(dp(pane.minWidth)) + pane.horizontalChrome).coerceAtMost(area.width())
+        val bodyHeight = dp(pane.placement.heightDp).coerceAtLeast(dp(pane.minHeight))
         val height = (bodyHeight + pane.verticalChrome).coerceAtMost(area.height())
-        val x = if (foldLayout != null) area.left + foldLayout.paneX(pane.slot, area.width(), width)
-            else area.left + ((area.width() - width) * pane.placement.x).roundToInt()
-        val y = if (foldLayout != null) area.bottom - height
-            else area.top + ((area.height() - height) * pane.placement.y).roundToInt()
+        val x = area.left + ((area.width() - width) * pane.placement.x).roundToInt()
+        val y = area.top + ((area.height() - height) * pane.placement.y).roundToInt()
         pane.bounds = GuideBounds(x, y, width, height)
         val params = pane.params ?: WindowManager.LayoutParams(width, height,
             WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
@@ -276,8 +297,11 @@ internal class SplitKeyboardController(
         panes.values.forEach { pane ->
             pane.gesture = null
             pane.gestureStart = null
-            pane.root.applicationWindowView = null
-            if (pane.root.parent != null) manager.removeViewImmediate(pane.root)
+            if (foldLayout != null) (pane.input.parent as? ViewGroup)?.removeView(pane.input)
+            else {
+                pane.root.applicationWindowView = null
+                if (pane.root.parent != null) manager.removeViewImmediate(pane.root)
+            }
             pane.candidates.adapter = null
         }
     }

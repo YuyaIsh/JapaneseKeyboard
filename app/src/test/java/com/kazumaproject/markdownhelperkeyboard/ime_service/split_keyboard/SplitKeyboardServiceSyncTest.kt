@@ -16,6 +16,8 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.FloatingKeyboardLayoutBinding
 import com.kazumaproject.markdownhelperkeyboard.ime_service.IMEService
 import com.kazumaproject.markdownhelperkeyboard.ime_service.adapters.SuggestionAdapter
+import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateRefreshCoordinator
+import com.kazumaproject.markdownhelperkeyboard.ime_service.models.CandidateShowFlag
 import com.kazumaproject.markdownhelperkeyboard.ime_service.state.KeyboardType
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +30,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers as Reflect
 import org.robolectric.util.ReflectionHelpers.ClassParameter
+import kotlin.math.roundToInt
 
 /** Exercises the real service's queued update path, without starting dictionaries or IME windows. */
 @RunWith(RobolectricTestRunner::class)
@@ -42,6 +45,13 @@ class SplitKeyboardServiceSyncTest {
         doReturn(EditorInfo().apply { inputType = 1; imeOptions = EditorInfo.IME_ACTION_SEARCH })
             .`when`(it).getCurrentInputEditorInfo()
         Reflect.setField(it, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+        Reflect.setField(it, "zenzRuntimeClient", mock(IMEService::class.java.getDeclaredField("zenzRuntimeClient").type))
+        // Mockito copies the service; rebind constructor callbacks to the spy's editor.
+        val target = it
+        Reflect.setField(it, "composingTextArbiter",
+            com.kazumaproject.markdownhelperkeyboard.ime_service.flick_preview.ComposingTextArbiter(
+                writeComposingText = { value, cursor -> target.currentInputConnection?.setComposingText(value, cursor) ?: false },
+                finishComposingText = { target.currentInputConnection?.finishComposingText() ?: false }))
     }
     private val modes = listOf(TenKeyQWERTYMode.Default, TenKeyQWERTYMode.Gojuon,
         TenKeyQWERTYMode.TenKeyQWERTY, TenKeyQWERTYMode.TenKeyQWERTYRomaji,
@@ -179,6 +189,9 @@ class SplitKeyboardServiceSyncTest {
         converting.set(true)
         val connection = mock(android.view.inputmethod.InputConnection::class.java)
         doReturn(connection).`when`(service).getCurrentInputConnection()
+        val container = android.widget.FrameLayout(context)
+        Reflect.setField(service, "keyboardContainer", container)
+        assertSame(container, service.onCreateInputView())
         service.onFinishInputView(false)
         service.onFinishInput()
         val info = EditorInfo().apply { inputType = 1 }
@@ -191,50 +204,207 @@ class SplitKeyboardServiceSyncTest {
         verify(connection, never()).finishComposingText()
     }
 
-    @Test fun foldPanesShareCompositionAndCandidatesWhenRoutingBetweenViews() {
+    @Test fun foldPaneHandoverCommitsOnlyTheActiveCompositionAndKeepsPaneModesIndependent() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
-        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
         select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
         val source = SuggestionAdapter()
         Reflect.setField(service, "suggestionAdapter", source)
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        val connection = mock(android.view.inputmethod.InputConnection::class.java)
+        doReturn(connection).`when`(service).getCurrentInputConnection()
         val candidates = listOf(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate(
             string = "仮名", type = 1.toByte(), length = 2.toUByte(), score = 0, yomi = "かな"))
         source.suggestions = candidates
         text.value = "かな"
-        val composition = text
-        val converting = Reflect.getField<java.util.concurrent.atomic.AtomicBoolean>(service, "isHenkan")
-        converting.set(true)
         Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.MAIN))
         call("scheduleSplitCandidates")
         shadowOf(Looper.getMainLooper()).idle()
-        for (slot in SplitSlot.entries) {
-            assertEnter(slot, TenKeyQWERTYMode.Default, true)
-            val adapter = Reflect.getField<SuggestionAdapter>(inputs.getValue(slot), "adapter")
-            assertEquals(candidates, adapter.suggestions)
-        }
-        // Exercise the same source routing used by both keyboard view callbacks.
+        assertEquals(candidates, Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.MAIN), "adapter").suggestions)
+        // This is the callback path used by a key tap on the other docked half.
         Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
             ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).keyboardViewFloating))
         assertEquals(SplitSlot.SUB, Reflect.getField<SplitSlot>(service, "activeSplitSlot"))
-        assertSame(composition, text)
-        assertEquals("かな", text.value)
-        assertSame(converting, Reflect.getField<Any>(service, "isHenkan"))
-        assertTrue(converting.get())
-        Reflect.setField(service, "currentInputModeForSession", InputMode.ModeEnglish)
-        Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.SUB))
+        verify(connection).commitText("かな", 1)
+        verify(connection).finishComposingText()
+        verify(connection).beginBatchEdit()
+        verify(connection).endBatchEdit()
+        assertEquals("", text.value)
+        assertFalse(Reflect.getField<java.util.concurrent.atomic.AtomicBoolean>(service, "isHenkan").get())
+        for (slot in SplitSlot.entries) {
+            assertTrue(Reflect.getField<SuggestionAdapter>(inputs.getValue(slot), "adapter").suggestions.isEmpty())
+        }
+        assertEquals(TenKeyQWERTYMode.TenKeyQWERTY,
+            Reflect.getField<MutableStateFlow<TenKeyQWERTYMode>>(service, "_tenKeyQWERTYMode").value)
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
         assertEquals(InputMode.ModeEnglish, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
         assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
         Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
             ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.MAIN).keyboardViewFloating))
         assertEquals(SplitSlot.MAIN, Reflect.getField<SplitSlot>(service, "activeSplitSlot"))
         assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(service, "currentInputModeForSession"))
-        assertEquals("かな", text.value)
-        // Confirmation changes the same session and both panes' presentation.
-        text.value = ""
-        converting.set(false)
-        call("syncSplitPresentation")
-        for (slot in SplitSlot.entries) assertEnter(slot, TenKeyQWERTYMode.Default, false)
+        assertEquals(TenKeyQWERTYMode.Default,
+            Reflect.getField<MutableStateFlow<TenKeyQWERTYMode>>(service, "_tenKeyQWERTYMode").value)
+        verify(connection, times(1)).commitText("かな", 1)
+    }
+
+    @Test fun foldJapanesePaneHandoverCommitsSelectedCandidateAndTailOnce() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Gojuon)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTYRomaji)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Gojuon)
+        val source = SuggestionAdapter()
+        Reflect.setField(service, "suggestionAdapter", source)
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        val connection = mock(android.view.inputmethod.InputConnection::class.java)
+        doReturn(connection).`when`(service).getCurrentInputConnection()
+        val candidates = listOf(
+            com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate("第一", 1.toByte(), 2.toUByte(), 0, "だいいち"),
+            com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate("第二", 1.toByte(), 2.toUByte(), 0, "だいに"),
+        )
+        source.suggestions = candidates
+        text.value = "だい"
+        Reflect.getField<java.util.concurrent.atomic.AtomicReference<String>>(service, "stringInTail").set("尾")
+        Reflect.getField<java.util.concurrent.atomic.AtomicBoolean>(service, "isHenkan").set(true)
+        Reflect.setField(service, "suggestionClickNum", 2)
+        val coordinator = Reflect.getField<CandidateRefreshCoordinator>(service, "candidateRefreshCoordinator")
+        val staleRequest = coordinator.request("だい", CandidateShowFlag.Updating)
+
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).qwertyViewFloating))
+
+        verify(connection).commitText("第二尾", 1)
+        verify(connection).finishComposingText()
+        assertFalse(coordinator.isCurrent(staleRequest))
+        assertEquals("", text.value)
+        assertEquals("", Reflect.getField<java.util.concurrent.atomic.AtomicReference<String>>(service, "stringInTail").get())
+        assertEquals(TenKeyQWERTYMode.TenKeyQWERTYRomaji,
+            Reflect.getField<MutableStateFlow<TenKeyQWERTYMode>>(service, "_tenKeyQWERTYMode").value)
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
+
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.MAIN).gojuonViewFloating))
+        verify(connection, times(1)).commitText("第二尾", 1)
+        assertEquals(TenKeyQWERTYMode.Gojuon,
+            Reflect.getField<MutableStateFlow<TenKeyQWERTYMode>>(service, "_tenKeyQWERTYMode").value)
+    }
+
+    @Test fun foldHandoverThenDeleteUsesOneEditorCompositionAtATime() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        val editor = android.widget.EditText(context)
+        val connection = object : android.view.inputmethod.BaseInputConnection(editor, true) {
+            override fun getEditable() = editor.editableText
+            override fun sendKeyEvent(event: android.view.KeyEvent) = editor.dispatchKeyEvent(event)
+        }
+        doReturn(connection).`when`(service).getCurrentInputConnection()
+        text.value = "かな"
+        service.setComposingText("かな", 1)
+
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).keyboardViewFloating))
+        val editable = checkNotNull(connection.editable)
+        assertEquals("かな", editable.toString())
+        assertEquals(-1, android.view.inputmethod.BaseInputConnection.getComposingSpanStart(editable))
+        assertEquals("", text.value)
+
+        Reflect.callInstanceMethod<Unit>(service, "handleDeleteKeyTap",
+            ClassParameter.from(String::class.java, ""), ClassParameter.from(List::class.java, emptyList<Any>()))
+        assertEquals("か", editable.toString())
+
+        text.value = "に"
+        service.setComposingText("に", 1)
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.MAIN).keyboardViewFloating))
+        assertEquals("かに", editable.toString())
+        assertEquals(-1, android.view.inputmethod.BaseInputConnection.getComposingSpanStart(editable))
+    }
+
+    @Test fun foldDockHostIsBottomDockedAndHidesTheRegularImeChildren() {
+        val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
+        val originalChildren = (0 until main.root.childCount).map(main.root::getChildAt)
+        val host = Reflect.callInstanceMethod<android.widget.FrameLayout>(service, "ensureFoldDockHost",
+            ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main))
+        val params = host.layoutParams as android.widget.FrameLayout.LayoutParams
+        assertSame(main.root, host.parent)
+        assertEquals(android.view.ViewGroup.LayoutParams.MATCH_PARENT, params.width)
+        assertEquals(android.view.ViewGroup.LayoutParams.MATCH_PARENT, params.height)
+        assertEquals(android.view.Gravity.BOTTOM, params.gravity)
+        assertEquals(1f, main.root.alpha)
+        assertEquals((298 * context.resources.displayMetrics.density).roundToInt(), (main.root.layoutParams as android.widget.FrameLayout.LayoutParams).height)
+        originalChildren.forEach { assertEquals(View.GONE, it.visibility) }
+    }
+
+    @Test fun foldHandoverPreservesDisplayedLiveConversionRatherThanRawReading() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        val connection = android.view.inputmethod.BaseInputConnection(View(context), true)
+        doReturn(connection).`when`(service).getCurrentInputConnection()
+        text.value = "かな"
+        service.setComposingText("仮名", 1)
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).keyboardViewFloating))
+        assertEquals("仮名", connection.editable.toString())
+        assertEquals(-1, android.view.inputmethod.BaseInputConnection.getComposingSpanStart(checkNotNull(connection.editable)))
+        assertEquals("", text.value)
+    }
+
+    @Test fun foldQwertyUsesExistingLanguageKeyIndependently() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "isKeyboardFloatingMode", true)
+        Reflect.setField(service, "englishEngine", mock(IMEService::class.java.getDeclaredField("englishEngine").type))
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        select(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
+        val view = bindings.getValue(SplitSlot.SUB).qwertyViewFloating
+        Reflect.callInstanceMethod<Unit>(service, "configureQwertyView",
+            ClassParameter.from(com.kazumaproject.qwerty_keyboard.ui.QWERTYKeyboardView::class.java, view),
+            ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main))
+        call("renderQwertyStateOnActiveSurface")
+        assertTrue(view.snapshotUiState().showRomajiEnglishSwitchKey)
+        val listener = Reflect.getField<com.kazumaproject.core.domain.listener.QWERTYKeyListener>(view, "qwertyKeyListener")
+        val key = com.kazumaproject.core.domain.qwerty.QWERTYKey.QWERTYKeySwitchRomajiEnglish
+        listener.onReleasedQWERTYKey(key, null, null)
+        Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.SUB))
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
+        assertTrue(Reflect.getField<Boolean>(inputs.getValue(SplitSlot.SUB), "romaji"))
+        listener.onReleasedQWERTYKey(key, null, null)
+        Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.SUB))
+        assertEquals(InputMode.ModeEnglish, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
+    }
+
+    @Test fun foldLayoutKeyCyclesOnlyActivePaneWithoutChangingSettings() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "keyboardOrder", listOf(KeyboardType.TENKEY, KeyboardType.GOJUON, KeyboardType.QWERTY))
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val before = prefs.all.toMap()
+        service.switchNextKeyboard()
+        assertEquals(TenKeyQWERTYMode.Gojuon, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(SplitSlot.MAIN), "mode"))
+        assertEquals(TenKeyQWERTYMode.Default, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(SplitSlot.SUB), "mode"))
+        service.switchNextKeyboard()
+        assertEquals(TenKeyQWERTYMode.TenKeyQWERTY, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(SplitSlot.MAIN), "mode"))
+        assertEquals(InputMode.ModeEnglish, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
+        assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
+        assertEquals(before, prefs.all)
     }
 
     @Test fun detachedCandidateSurfaceUsesSharedSourceAndRestoresItsOriginalParent() {

@@ -1,5 +1,6 @@
 package com.kazumaproject.markdownhelperkeyboard.ime_service
 
+import kotlin.math.roundToInt
 import com.kazumaproject.markdownhelperkeyboard.ime_service.split_keyboard.*
 import com.kazumaproject.markdownhelperkeyboard.ime_service.floating_dictionary.DictionaryKind
 import com.kazumaproject.markdownhelperkeyboard.ime_service.floating_dictionary.FloatingDictionaryController
@@ -2373,6 +2374,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     private var preservingFoldConfiguration = false
     private var foldMonitor: FoldKeyboardMonitor? = null
     private var activeFoldLayout: FoldKeyboardLayout? = null
+    private var foldDockHost: FrameLayout? = null
+    private val foldHiddenViews = linkedMapOf<View, Int>()
     private var regularKeyboardType = KeyboardType.TENKEY
 
     private fun startFoldMonitor() {
@@ -2445,7 +2448,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             return
         }
         activeSplitSlot?.let(::saveSplitInput)
-        if (activeSplitSlot != null) finishCustomToggleForAction()
+        if (activeSplitSlot != null) {
+            finishCustomToggleForAction()
+            if (activeFoldLayout != null && splitLoadingJob?.isActive != true) finishFoldSideComposition()
+        }
         stopAllOngoingKeyLongPresses()
         activeSplitSlot = slot
         floatingKeyboardBinding = state.binding
@@ -2471,6 +2477,52 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         syncSplitPresentation()
     }
 
+    /** Only the active pane owns an editor composition. A handover ends that session. */
+    private fun finishFoldSideComposition() {
+        flickInputPreviewCoordinator.cancel(restore = true)
+        val pending = if (isHenkan.get() || bunsetsuConversionSession != null)
+            resolveCurrentHenkanCommitText() else if (inputString.value.isNotEmpty() || stringInTail.get().isNotEmpty())
+            composingTextArbiter.canonicalText()?.toString() ?: (inputString.value + stringInTail.get()) else ""
+        candidateRequestTracker.invalidate()
+        candidateRefreshCoordinator.invalidate()
+        defaultInputFinalizeJob?.cancel()
+        defaultInputFinalizeJob = null
+        if (pending.isNotEmpty()) {
+            beginBatchEdit()
+            try {
+                commitText(pending, 1)
+                finishComposingText()
+            } finally { endBatchEdit() }
+        }
+        resetFlagsEnterKeyNotHenkan()
+        clearDirectCommitCompositionState("Fold side handover")
+        splitInputs.values.forEach { it.adapter.suggestions = emptyList() }
+    }
+
+    private fun ensureFoldDockHost(main: MainLayoutBinding): FrameLayout {
+        val host = foldDockHost ?: FrameLayout(main.root.context).also {
+            foldDockHost = it
+            main.root.addView(it, FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM))
+        }
+        for (index in 0 until main.root.childCount) {
+            val child = main.root.getChildAt(index)
+            if (child !== host) {
+                foldHiddenViews.putIfAbsent(child, child.visibility)
+                child.visibility = View.GONE
+            }
+        }
+        val height = (298 * resources.displayMetrics.density).roundToInt()
+        main.root.layoutParams = (main.root.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(-1, height)).apply {
+            width = -1; this.height = height; gravity = Gravity.BOTTOM
+            setMargins(0, 0, 0, 0)
+        }
+        main.root.alpha = 1f
+        main.root.isVisible = true
+        host.isVisible = true
+        return host
+    }
+
     private fun startSplitKeyboard(foldLayout: FoldKeyboardLayout? = null) {
         if (splitController != null || splitLoadingJob?.isActive == true) return
         val main = mainLayoutBinding ?: return
@@ -2484,12 +2536,13 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         savedSingleFloatingBinding = floatingKeyboardBinding
         savedSingleFloatingMode = isKeyboardFloatingMode
         isKeyboardFloatingMode = true
-        ensureFloatingInputHostLayout(main)
+        if (foldLayout != null) ensureFoldDockHost(main) else ensureFloatingInputHostLayout(main)
         splitLoadingJob = scope.launch {
             try {
                 val layouts = withContext(Dispatchers.IO) { keyboardRepository.getLayoutsNotFlowEnsuringStableIds() }
                 customLayouts = layouts
-                val host = checkNotNull(window.window?.decorView) { "IME window is unavailable" }
+                val host = if (foldLayout != null) ensureFoldDockHost(main)
+                    else checkNotNull(window.window?.decorView) { "IME window is unavailable" }
                 val controller = SplitKeyboardController(main.root.context, host,
                     onActivate = ::activateSplitInput, onInputFinished = ::saveSplitInput,
                     foldLayout = foldLayout,
@@ -2520,9 +2573,13 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 main.candidatesRowView.adapter = suggestionAdapterFull
                 controller.setCandidatesDetached(floatingCandidateSurfaceActive)
                 (foldLayout?.slots ?: SplitSlot.entries).forEach { slot ->
-                    val configured = if (foldLayout != null) SplitKeyboardSelection() else splitSettings.selection(slot)
+                    val configured = if (foldLayout != null) splitSettings.foldSelection(slot, SplitKeyboardSelection(
+                        regularKeyboardType.takeUnless { it == KeyboardType.SPLIT }
+                            ?: keyboardOrder.firstOrNull { it != KeyboardType.SPLIT } ?: KeyboardType.TENKEY,
+                        currentCustomKeyboardStableIdCandidate() ?: layouts.firstOrNull()?.stableId.orEmpty()
+                    )) else splitSettings.selection(slot)
                     val selection = configured.resolved(layouts.map { it.stableId }.toSet())
-                    if (selection != configured) splitSettings.saveSelection(slot, selection)
+                    if (selection != configured && foldLayout == null) splitSettings.saveSelection(slot, selection)
                     val binding = FloatingKeyboardLayoutBinding.inflate(LayoutInflater.from(main.root.context))
                     val adapter = SuggestionAdapter()
                     var minimumWidthDp = when (selection.type) {
@@ -2643,7 +2700,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             splitCandidateRefreshPosted = false
             val source = suggestionAdapter ?: return@post
             splitInputs.values.forEach { state ->
-                state.adapter.mirrorSplitContentFrom(source)
+                if (activeFoldLayout == null || state.slot == activeSplitSlot) {
+                    state.adapter.mirrorSplitContentFrom(source)
+                } else {
+                    state.adapter.suggestions = emptyList()
+                }
                 val colors = resolveCandidatePanelColors()
                 state.adapter.setFloatingPanelColors(colors)
                 state.adapter.setCandidateTextColor(colors.text)
@@ -2714,8 +2775,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 shortcutInputBehaviorOverride != null || (mode == TenKeyQWERTYMode.Custom && direct) || forceDirect)
             val enterAction = if (behavior == ResolvedInputBehavior.DIRECT_COMMIT && !typeNullUsesEditor)
                 EditorEnterAction.Enter else EditorEnterPolicy.resolve(currentInputEditorInfo)
-            val presentation = SplitKeyboardPresentation.resolve(mode, inputMode, text,
-                stringInTail.get().isNotEmpty(), isHenkan.get(), tenkeyShowIMEButtonPreference != false,
+            val ownsComposition = activeFoldLayout == null || active
+            val presentation = SplitKeyboardPresentation.resolve(mode, inputMode, if (ownsComposition) text else "",
+                ownsComposition && stringInTail.get().isNotEmpty(), ownsComposition && isHenkan.get(), tenkeyShowIMEButtonPreference != false,
                 EditorEnterPolicy.keyStateIndex(enterAction))
             val enterDrawable = when (enterAction) {
                 EditorEnterAction.Enter, EditorEnterAction.Newline -> cachedReturnDrawable
@@ -2756,6 +2818,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         splitController?.stop()
         splitController = null
         activeFoldLayout = null
+        foldDockHost?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        foldDockHost = null
+        foldHiddenViews.forEach { (view, visibility) -> view.visibility = visibility }
+        foldHiddenViews.clear()
         retiredInputs.forEach {
             it.symbolJob?.cancel()
             it.layoutJob?.cancel()
@@ -3259,7 +3325,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         )
     }
 
-    private fun isComposingGuideEligible(): Boolean = canShowComposingGuide(
+    private fun isComposingGuideEligible(): Boolean = activeFoldLayout == null && canShowComposingGuide(
         inputViewActive = isInputViewActive,
         fullscreen = isFullscreenMode,
         hardwareKeyboard = hasHardwareKeyboardConnected == true ||
@@ -3287,6 +3353,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onCreateInputView(): View? {
+        if (preservingFoldConfiguration && keyboardContainer != null) {
+            keyboardContainer?.let { (it.parent as? ViewGroup)?.removeView(it) }
+            return keyboardContainer
+        }
         stopSplitKeyboard()
         composingGuide?.stop()
         Timber.d("onCreateInputView")
@@ -4278,6 +4348,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     private fun prepareNormalRootAsFloatingHost(mainView: MainLayoutBinding) {
+        if (activeFoldLayout != null) { ensureFoldDockHost(mainView); return }
         releaseKeyboardBackgroundVideoPlayer()
         clearKeyboardBackgroundImage(mainView.keyboardBackgroundImage)
         mainView.suminagashiInkView.clearInk()
@@ -6286,6 +6357,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     override fun onComputeInsets(outInsets: Insets?) {
         super.onComputeInsets(outInsets)
+        if (activeFoldLayout != null) return
         if ((physicalKeyboardEnable.replayCache.isNotEmpty() && physicalKeyboardEnable.replayCache.first()) || isKeyboardFloatingMode == true) {
             val inputHeight = window.window?.decorView?.height ?: 0
             outInsets?.contentTopInsets = inputHeight
@@ -8936,6 +9008,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     private fun ensureFloatingInputHostLayout(mainView: MainLayoutBinding) {
+        if (activeFoldLayout != null) { ensureFoldDockHost(mainView); return }
         (mainView.root.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             params.width = ViewGroup.LayoutParams.MATCH_PARENT
             params.height = getScreenHeight(this@IMEService)
@@ -9030,13 +9103,13 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             }
 
             TenKeyQWERTYMode.TenKeyQWERTY -> {
-                surface.qwertyView?.setRomajiEnglishSwitchKeyVisibility(false)
+                surface.qwertyView?.setRomajiEnglishSwitchKeyVisibility(activeFoldLayout != null)
                 surface.qwertyView?.isVisible = true
             }
 
             TenKeyQWERTYMode.TenKeyQWERTYRomaji -> {
                 surface.qwertyView?.setRomajiEnglishSwitchKeyVisibility(
-                    qwertyShowSwitchRomajiEnglishPreference == true
+                    activeFoldLayout != null || qwertyShowSwitchRomajiEnglishPreference == true
                 )
                 surface.qwertyView?.isVisible = true
             }
@@ -9464,8 +9537,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             currentInputModeForSession == InputMode.ModeJapanese
         )
         qwertyView.setRomajiEnglishSwitchKeyVisibility(
-            qwertyMode.value == TenKeyQWERTYMode.TenKeyQWERTYRomaji &&
-                    qwertyShowSwitchRomajiEnglishPreference == true
+            (activeFoldLayout != null && qwertyMode.value in setOf(TenKeyQWERTYMode.TenKeyQWERTY, TenKeyQWERTYMode.TenKeyQWERTYRomaji)) ||
+                    (qwertyMode.value == TenKeyQWERTYMode.TenKeyQWERTYRomaji && qwertyShowSwitchRomajiEnglishPreference == true)
         )
         qwertyView.setSwitchNumberLayoutKeyVisibility(shouldShowQwertySwitchNumberLayoutKey())
         updateQwertyGlideInputModeOnActiveSurface()
@@ -12641,6 +12714,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     private fun showResolvedKeyboard(requestedType: KeyboardType, allowFold: Boolean = true) {
         if (allowFold) regularKeyboardType = requestedType
         val foldLayout = if (allowFold && splitSettings.foldEnabled && (foldMonitor?.expanded ?: FoldKeyboardMonitor.isExpanded(this))) splitSettings.foldLayout else null
+        if (activeFoldLayout != null && activeFoldLayout != foldLayout) finishFoldSideComposition()
         if (foldLayout != null) {
             if (activeFoldLayout != foldLayout) stopSplitKeyboard(restoreSurface = true)
             startSplitKeyboard(foldLayout)
@@ -13337,7 +13411,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             Timber.d("moveToCustomKeyboardByStableId: target not found stableId=$stableId")
             return
         }
-        if (splitController != null) {
+        if (activeFoldLayout != null) {
+            switchFoldKeyboard(KeyboardType.CUSTOM, stableId)
+        } else if (splitController != null) {
             stopSplitKeyboard(restoreSurface = true)
             showResolvedKeyboard(KeyboardType.CUSTOM)
             keyboardOrder.indexOf(KeyboardType.CUSTOM).takeIf { it >= 0 }?.let { currentKeyboardOrder = it }
@@ -28159,8 +28235,53 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         }
     }
 
+    private fun switchFoldKeyboard(type: KeyboardType, customStableId: String? = null) {
+        val slot = activeSplitSlot ?: return
+        val state = splitInputs[slot] ?: return
+        finishCustomToggleForAction()
+        finishFoldSideComposition()
+        stopAllOngoingKeyLongPresses()
+        state.selection = SplitKeyboardSelection(type,
+            customStableId ?: currentCustomKeyboardStableIdCandidate() ?: customLayouts.firstOrNull()?.stableId.orEmpty())
+        state.mode = splitMode(type)
+        state.inputMode = if (type == KeyboardType.QWERTY) InputMode.ModeEnglish else InputMode.ModeJapanese
+        state.romaji = type == KeyboardType.ROMAJI
+        state.customMode = state.inputMode.toSumireKeyboardInputMode()
+        state.symbolState = SymbolKeyboardState()
+        state.shift = CustomKeyboardShiftState.OFF
+        state.hardShift = false
+        state.softwareQwertyShift = false
+        state.previousMode = null
+        state.numberReturn = RestartInputModeQwertyReturnSource.None
+        state.numberFromTenkey = false
+        state.customDirect = false
+        state.customRomaji = false
+        activeSplitSlot = null
+        activateSplitInput(slot)
+        when (type) {
+            KeyboardType.SUMIRE -> setSumireLayoutTo(state.binding.customLayoutFloating)
+            KeyboardType.CUSTOM -> {
+                selectInitialCustomKeyboardTab()
+                setCurrentCustomLayoutTo(state.binding.customLayoutFloating)
+            }
+            else -> Unit
+        }
+        renderCurrentKeyboardStateOnActiveSurface()
+        state.presentedMode = state.mode
+        saveSplitInput(slot)
+        scheduleSplitCandidates()
+    }
+
     // 2) 次のモードに切り替える関数
     fun switchNextKeyboard() {
+        if (activeFoldLayout != null) {
+            val available = keyboardOrder.filter { it != KeyboardType.SPLIT }
+            if (available.isEmpty()) return
+            val current = activeSplitSlot?.let(splitInputs::get)?.selection?.type
+            val next = available[(available.indexOf(current) + 1) % available.size]
+            switchFoldKeyboard(next)
+            return
+        }
         if (splitController != null && keyboardOrder.none { it != KeyboardType.SPLIT }) {
             showResolvedKeyboard(KeyboardType.TENKEY)
             return

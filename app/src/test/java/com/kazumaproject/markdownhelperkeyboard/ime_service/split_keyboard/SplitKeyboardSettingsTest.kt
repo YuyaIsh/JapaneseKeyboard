@@ -16,6 +16,18 @@ class SplitKeyboardSettingsTest {
     private val prefs = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("split-test", 0)
     private val settings = SplitKeyboardSettings(prefs)
     @Before fun clear() { prefs.edit().clear().commit() }
+    @Test fun foldUsesExistingPaneChoicesOrRegularLayoutWithoutWritingPreferences() {
+        val regular = SplitKeyboardSelection(KeyboardType.ROMAJI)
+        assertEquals(regular, settings.foldSelection(SplitSlot.MAIN, regular))
+        assertFalse(prefs.contains(SplitKeyboardSettings.typeKey(SplitSlot.MAIN)))
+        val custom = SplitKeyboardSelection(KeyboardType.CUSTOM, "configured")
+        settings.saveSelection(SplitSlot.SUB, custom)
+        val before = prefs.all.toMap()
+        val restored = SplitKeyboardSettings(prefs)
+        assertEquals(regular, restored.foldSelection(SplitSlot.MAIN, regular))
+        assertEquals(custom, restored.foldSelection(SplitSlot.SUB, regular))
+        assertEquals(before, prefs.all)
+    }
     @Test fun defaultsAndInvalidValuesAreSafe() {
         SplitSlot.entries.forEach { assertEquals(SplitKeyboardSelection(), settings.selection(it)) }
         assertEquals(SplitCandidatePlacement.BOTH, settings.candidates)
