@@ -54,6 +54,23 @@ internal class SplitKeyboardController(
 
     private inner class InputFrame(val slot: SplitSlot) : FrameLayout(context) {
         private var keyboardGesture = false
+        private var foldGesture = false
+
+        private fun cancelFoldGesture() {
+            if (!foldGesture) return
+            // Invalidate the sequence before dispatching cancellation callbacks. Later
+            // MOVE/UP events from this pointer must not take ownership back.
+            foldGesture = false
+            keyboardGesture = false
+            val now = android.os.SystemClock.uptimeMillis()
+            val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+            try { super.dispatchTouchEvent(cancel) } finally {
+                cancel.recycle()
+                onInputFinished(slot)
+                onGestureChanged(slot, false)
+            }
+        }
+
         fun cancelKeyboardGesture() {
             if (!keyboardGesture) return
             val now = android.os.SystemClock.uptimeMillis()
@@ -94,6 +111,14 @@ internal class SplitKeyboardController(
         }
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
             if (editing) return true
+            if (foldLayout != null) {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    // Cancel native key timers and candidate presses while the outgoing
+                    // pane still owns the service state, before activating this pane.
+                    panes.values.filter { it.slot != slot }.forEach { it.input.cancelFoldGesture() }
+                    foldGesture = true
+                } else if (!foldGesture) return true
+            }
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 val candidates = panes[slot]?.candidates
                 keyboardGesture = candidates?.isVisible != true || event.y >= candidates.height
@@ -106,6 +131,7 @@ internal class SplitKeyboardController(
                 onInputFinished(slot)
                 if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
                     keyboardGesture = false
+                    foldGesture = false
                     onGestureChanged(slot, false)
                 }
             }

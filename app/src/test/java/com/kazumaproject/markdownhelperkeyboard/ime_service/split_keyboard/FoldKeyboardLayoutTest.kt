@@ -207,4 +207,80 @@ class FoldKeyboardLayoutTest {
         }
     }
 
+    @Test fun touchingOtherFoldPaneCancelsKeyboardAndCandidateSequencesBeforeActivation() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val host = FoldKeyboardDockHost(activity)
+        activity.setContentView(host)
+        val events = mutableListOf<String>()
+        val controller = SplitKeyboardController(activity, host,
+            { events += "activate:$it" }, { events += "save:$it" }, {},
+            onGestureChanged = { slot, touching -> events += "gesture:$slot:$touching" },
+            foldLayout = FoldKeyboardLayout.SPLIT, foldBodyHeight = { 180 }, foldCandidateHeight = { 58 })
+        val bodies = SplitSlot.entries.associateWith { slot ->
+            object : View(activity) {
+                private val held = Runnable { events += "held:$slot" }
+                override fun onTouchEvent(event: MotionEvent): Boolean {
+                    events += "body:$slot:${event.actionMasked}"
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> postDelayed(held, 200)
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> removeCallbacks(held)
+                    }
+                    return true
+                }
+            }
+        }
+        for (slot in SplitSlot.entries) {
+            val list = object : RecyclerView(activity) {
+                override fun onTouchEvent(event: MotionEvent): Boolean {
+                    events += "candidate:$slot:${event.actionMasked}"
+                    return true
+                }
+            }
+            controller.add(slot, bodies.getValue(slot), list, 240)
+        }
+        fun touch(slot: SplitSlot, action: Int, y: Float? = null) {
+            // The activity may perform another bounded layout while the hold timer runs.
+            // Always target the actual bottom-docked keyboard, rather than the gap above it.
+            val body = bodies.getValue(slot).parent as View
+            val contents = body.parent as View
+            val touchY = y ?: (contents.top + body.top + body.height / 2f)
+            val event = MotionEvent.obtain(0, android.os.SystemClock.uptimeMillis(), action, 30f, touchY, 0)
+            try { host.getChildAt(slot.ordinal).dispatchTouchEvent(event) } finally { event.recycle() }
+        }
+        try {
+            controller.start()
+            host.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.AT_MOST))
+            host.layout(0, 0, 800, host.measuredHeight)
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_DOWN)
+            events.clear()
+            touch(SplitSlot.SUB, MotionEvent.ACTION_DOWN)
+            assertEquals("body:MAIN:${MotionEvent.ACTION_CANCEL}", events.first())
+            assertTrue(events.indexOf("gesture:MAIN:false") < events.indexOf("activate:SUB"))
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250))
+            assertFalse(events.contains("held:MAIN"))
+            events.clear()
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_MOVE)
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_UP)
+            assertTrue("Canceled pointers must not re-activate, save, or dispatch to keys", events.isEmpty())
+            touch(SplitSlot.SUB, MotionEvent.ACTION_UP)
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_DOWN, 10f) // candidate press
+            events.clear()
+            touch(SplitSlot.SUB, MotionEvent.ACTION_DOWN)
+            assertEquals("candidate:MAIN:${MotionEvent.ACTION_CANCEL}", events.first())
+            assertTrue(events.indexOf("gesture:MAIN:false") < events.indexOf("activate:SUB"))
+            events.clear()
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_UP, 10f)
+            assertTrue(events.isEmpty())
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_DOWN)
+            assertTrue("A fresh DOWN starts a new valid sequence", events.contains("activate:MAIN"))
+            assertTrue("Fresh DOWN must reach the keyboard: ${events.joinToString()}",
+                events.contains("body:MAIN:${MotionEvent.ACTION_DOWN}"))
+            touch(SplitSlot.MAIN, MotionEvent.ACTION_UP)
+        } finally {
+            controller.stop()
+            activity.finish()
+        }
+    }
+
 }

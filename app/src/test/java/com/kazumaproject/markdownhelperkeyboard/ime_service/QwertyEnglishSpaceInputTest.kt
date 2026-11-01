@@ -53,6 +53,7 @@ class QwertyEnglishSpaceInputTest {
         AppPreference.init(ApplicationProvider.getApplicationContext())
         val service = spy(IMEService())
         service.appPreference = AppPreference
+        service.zenzRuntimeClient = mock(com.kazumaproject.markdownhelperkeyboard.zenz.runtime.ZenzRuntimeClient::class.java)
         ReflectionHelpers.setField(service, "listAdapter", mock(FloatingCandidateListAdapter::class.java))
         doReturn(editor).`when`(service).getCurrentInputConnection()
         ReflectionHelpers.setField(service, "currentInputModeForSession", InputMode.ModeEnglish)

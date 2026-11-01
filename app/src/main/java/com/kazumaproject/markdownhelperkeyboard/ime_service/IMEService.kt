@@ -2544,7 +2544,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         }
         resetFlagsEnterKeyNotHenkan()
         clearDirectCommitCompositionState("Fold side handover")
-        splitInputs.values.forEach { it.adapter.suggestions = emptyList() }
+        suggestionAdapter?.submitContent(CandidateStripContent.Empty)
+        suggestionAdapterFull?.submitContent(CandidateStripContent.Empty)
+        splitInputs.values.forEach { it.adapter.submitContent(CandidateStripContent.Empty) }
     }
 
     private fun ensureFoldDockHost(main: MainLayoutBinding): FrameLayout {
@@ -2774,7 +2776,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 if (activeFoldLayout == null || state.slot == activeSplitSlot) {
                     state.adapter.mirrorSplitContentFrom(source)
                 } else {
-                    state.adapter.suggestions = emptyList()
+                    state.adapter.submitContent(CandidateStripContent.Empty)
                 }
                 val colors = resolveCandidatePanelColors()
                 state.adapter.setFloatingPanelColors(colors)

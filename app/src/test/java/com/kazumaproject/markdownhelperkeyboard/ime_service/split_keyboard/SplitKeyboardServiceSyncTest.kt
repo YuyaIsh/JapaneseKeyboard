@@ -249,6 +249,81 @@ class SplitKeyboardServiceSyncTest {
         verify(connection, times(1)).commitText("かな", 1)
     }
 
+    @Test fun foldHandoverClearsZeroQueryActionsFromTheInactivePane() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        val candidate = com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate(
+            "古い履歴", 1.toByte(), 4.toUByte(), 0, "ふるいりれき")
+        val source = SuggestionAdapter()
+        Reflect.setField(service, "suggestionAdapter", source)
+        source.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(listOf(candidate)))
+        call("scheduleSplitCandidates")
+        shadowOf(Looper.getMainLooper()).idle()
+        val left = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.MAIN), "adapter")
+        assertTrue(left.buildZeroQueryDisplayTextsForTesting().contains("古い履歴"))
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
+            ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).qwertyViewFloating))
+        assertTrue("The old pane must not retain clickable zero-query candidates", left.buildZeroQueryDisplayTextsForTesting().isEmpty())
+        // Also clear non-active strips when an asynchronous source update arrives.
+        left.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(listOf(candidate)))
+        call("scheduleSplitCandidates")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(left.buildZeroQueryDisplayTextsForTesting().isEmpty())
+    }
+
+    @Test fun clearedSplitStripDoesNotForwardCapturedCandidateActions() {
+        val candidate = com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate(
+            "古い候補", 1.toByte(), 4.toUByte(), 0, "ふるいこうほ")
+        val source = SuggestionAdapter()
+        val strip = SuggestionAdapter()
+        var ordinaryClicks = 0
+        var historyClicks = 0
+        source.setOnItemClickListener { _, _ -> ordinaryClicks++ }
+        source.setOnZeroQueryCandidateClickListener { historyClicks++ }
+        source.suggestions = listOf(candidate)
+        strip.mirrorSplitContentFrom(source)
+        val ordinary = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate, Int) -> Unit>(strip, "onItemClickListener")
+        ordinary(candidate, 0)
+        assertEquals(1, ordinaryClicks)
+        strip.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.Empty)
+        ordinary(candidate, 0) // a ViewHolder can outlive the asynchronous list replacement
+        assertEquals(1, ordinaryClicks)
+        source.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(listOf(candidate)))
+        strip.mirrorSplitContentFrom(source)
+        val history = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate) -> Unit>(strip, "onZeroQueryCandidateClickListener")
+        history(candidate)
+        assertEquals(1, historyClicks)
+        strip.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.Empty)
+        history(candidate)
+        assertEquals(1, historyClicks)
+    }
+
+    @Test fun editorReplacementDoesNotCommitOldFoldTextOrRestoreOldPaneChoices() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.TenKeyQWERTYRomaji)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.TenKeyQWERTYRomaji)
+        val first = android.view.inputmethod.BaseInputConnection(View(context), true)
+        doReturn(first).`when`(service).getCurrentInputConnection()
+        text.value = "かな"
+        service.setComposingText("かな", 1)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        val replacement = android.view.inputmethod.BaseInputConnection(View(context), true)
+        replacement.commitText("new editor", 1)
+        doReturn(replacement).`when`(service).getCurrentInputConnection()
+        service.onWindowHidden()
+        assertEquals("new editor", replacement.editable.toString())
+        assertTrue(Reflect.getField<Map<*, *>>(service, "savedFoldInputs").isEmpty())
+        assertNull(Reflect.getField<SplitSlot?>(service, "activeSplitSlot"))
+        assertNull(Reflect.getField<Any?>(service, "splitController"))
+    }
+
     @Test fun foldHandoverCommitsBeforeChangingSideAndRepeatedTouchRoutingDoesNotCommitAgain() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
