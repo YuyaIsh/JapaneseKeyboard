@@ -338,7 +338,7 @@ class SuggestionAdapter internal constructor(
     private var lastSubmittedDisplayItems: List<SuggestionDisplayItem> = emptyList()
 
     /** Independent split strip: share data and commands, never framework-owned inline Views. */
-    fun mirrorSplitContentFrom(source: SuggestionAdapter) {
+    fun mirrorSplitContentFrom(source: SuggestionAdapter, canHandleActions: () -> Boolean = { true }) {
         clipboardText = source.clipboardText
         clipboardBitmap = source.clipboardBitmap
         undoText = source.undoText
@@ -366,22 +366,22 @@ class SuggestionAdapter internal constructor(
         // DiffUtil can leave an old holder attached until the replacement list commits.
         // A pane/session handover must also invalidate that holder's captured commands.
         fun currentCandidate(candidate: Candidate, position: Int) =
-            currentContent.candidatesForClicks().getOrNull(position) == candidate &&
+            canHandleActions() && currentContent.candidatesForClicks().getOrNull(position) == candidate &&
                 source.currentContent.candidatesForClicks().getOrNull(position) == candidate
         onItemClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemClickListener?.invoke(a, b) }
         onItemLongClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemLongClickListener?.invoke(a, b) }
-        onItemHelperIconClickListener = { a -> source.onItemHelperIconClickListener?.invoke(a) }
-        onItemHelperIconLongClickListener = { a -> source.onItemHelperIconLongClickListener?.invoke(a) }
-        onShortcutItemClickListener = { a -> source.onShortcutItemClickListener?.invoke(a) }
-        onShortcutEntryClickListener = { a -> source.onShortcutEntryClickListener?.invoke(a) }
+        onItemHelperIconClickListener = { a -> if (canHandleActions()) source.onItemHelperIconClickListener?.invoke(a) }
+        onItemHelperIconLongClickListener = { a -> if (canHandleActions()) source.onItemHelperIconLongClickListener?.invoke(a) }
+        onShortcutItemClickListener = { a -> if (canHandleActions()) source.onShortcutItemClickListener?.invoke(a) }
+        onShortcutEntryClickListener = { a -> if (canHandleActions()) source.onShortcutEntryClickListener?.invoke(a) }
         onZeroQueryCandidateClickListener = { a ->
-            if ((currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true &&
+            if (canHandleActions() && (currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true &&
                 (source.currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true) {
                 source.onZeroQueryCandidateClickListener?.invoke(a)
             }
         }
-        onZeroQueryCloseClickListener = { source.onZeroQueryCloseClickListener?.invoke() }
-        onShowSoftKeyboardClick = { source.onShowSoftKeyboardClick?.invoke() }
+        onZeroQueryCloseClickListener = { if (canHandleActions()) source.onZeroQueryCloseClickListener?.invoke() }
+        onShowSoftKeyboardClick = { if (canHandleActions()) source.onShowSoftKeyboardClick?.invoke() }
         val content = if (source.currentContent is CandidateStripContent.CustomLayoutPicker)
             CandidateStripContent.Empty else source.currentContent
         submitContent(content, InlineSuggestionStripState())

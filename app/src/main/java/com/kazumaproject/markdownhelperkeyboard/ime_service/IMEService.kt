@@ -2495,7 +2495,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         }
         activeSplitSlot?.let(::saveSplitInput)
         if (activeSplitSlot != null) {
-            if (activeFoldLayout != null && splitLoadingJob?.isActive != true) finishFoldSideComposition()
+            if (activeFoldLayout != null && splitLoadingJob?.isActive != true &&
+                (currentInputModeForSession != state.inputMode ||
+                    (qwertyMode.value == TenKeyQWERTYMode.Custom && isCustomLayoutDirectMode) !=
+                    (state.mode == TenKeyQWERTYMode.Custom && state.customDirect))) finishFoldSideComposition()
             else finishCustomToggleForAction()
         }
         stopAllOngoingKeyLongPresses()
@@ -2521,9 +2524,18 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         _tenKeyQWERTYMode.value = state.mode
         refreshBaselineInputBehaviorForCurrentKeyboard("split input source")
         syncSplitPresentation()
+        if (activeFoldLayout != null) {
+            suggestionAdapter?.let { source ->
+                splitInputs.values.forEach { pane ->
+                    if (pane.slot == slot) pane.adapter.mirrorSplitContentFrom(source) { activeSplitSlot == slot && splitInputs[slot] === pane }
+                    else pane.adapter.submitContent(CandidateStripContent.Empty)
+                }
+            }
+        }
+        scheduleSplitCandidates()
     }
 
-    /** Only the active pane owns an editor composition. A handover ends that session. */
+    /** Finish the shared editor session before changing its input language or ending input. */
     private fun finishFoldSideComposition() {
         stopAllOngoingKeyLongPresses()
         finishCustomToggleForAction()
@@ -2774,7 +2786,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             val source = suggestionAdapter ?: return@post
             splitInputs.values.forEach { state ->
                 if (activeFoldLayout == null || state.slot == activeSplitSlot) {
-                    state.adapter.mirrorSplitContentFrom(source)
+                    state.adapter.mirrorSplitContentFrom(source) { splitInputs[state.slot] === state && (activeFoldLayout == null || state.slot == activeSplitSlot) }
                 } else {
                     state.adapter.submitContent(CandidateStripContent.Empty)
                 }
@@ -9340,6 +9352,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 RestartInputModeQwertyReturnSource.TenKeyNumber
             }
         )
+        finishFoldCompositionForInputMode(InputMode.ModeNumber)
         _tenKeyQWERTYMode.update { TenKeyQWERTYMode.TenKeyQWERTY }
         currentInputModeForSession = InputMode.ModeNumber
         setCurrentQwertyRomajiModeForSession(false)
@@ -9397,7 +9410,13 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         }
     }
 
+    private fun finishFoldCompositionForInputMode(inputMode: InputMode) {
+        if (activeFoldLayout != null && splitLoadingJob?.isActive != true &&
+            currentInputModeForSession != inputMode) finishFoldSideComposition()
+    }
+
     private fun setCurrentInputModeForSession(inputMode: InputMode) {
+        finishFoldCompositionForInputMode(inputMode)
         currentInputModeForSession = inputMode
         setInputModeOnActiveSurface(inputMode)
     }
@@ -10374,6 +10393,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         inputMode: InputMode,
         mainView: MainLayoutBinding
     ) {
+        finishFoldCompositionForInputMode(inputMode)
         currentInputModeForSession = inputMode
         if (switchTenkeyEnglishToQwertyIfNeeded(inputMode, mainView)) return
         setTenkeyIconsInHenkan(inputString.value, mainView)
@@ -10590,6 +10610,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 }
             })
             setOnInputModeChangedListener { inputMode ->
+                activateSplitView(gojuonView)
+                finishFoldCompositionForInputMode(inputMode)
                 currentInputModeForSession = inputMode
                 if (switchTenkeyEnglishToQwertyIfNeeded(inputMode, mainView)) {
                     return@setOnInputModeChangedListener
@@ -14452,6 +14474,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                     }
 
                     KeyAction.SwitchDirectMode -> {
+                        if (activeFoldLayout != null) finishFoldSideComposition()
                         isCustomLayoutDirectMode = !isCustomLayoutDirectMode
                         persistCurrentCustomKeyboardInputModeIfEnabled()
                         shortcutInputBehaviorOverride = null
@@ -14906,6 +14929,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                     }
 
                     KeyAction.SwitchDirectMode -> {
+                        if (activeFoldLayout != null) finishFoldSideComposition()
                         isCustomLayoutDirectMode = !isCustomLayoutDirectMode
                         persistCurrentCustomKeyboardInputModeIfEnabled()
                         shortcutInputBehaviorOverride = null
@@ -28322,7 +28346,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     private fun switchFoldKeyboard(type: KeyboardType, customStableId: String? = null) {
         val slot = activeSplitSlot ?: return
         val state = splitInputs[slot] ?: return
-        finishFoldSideComposition()
+        finishFoldCompositionForInputMode(if (type == KeyboardType.QWERTY) InputMode.ModeEnglish else InputMode.ModeJapanese)
+        if (state.mode == TenKeyQWERTYMode.Custom && isCustomLayoutDirectMode) finishFoldSideComposition()
         state.selection = SplitKeyboardSelection(type,
             customStableId ?: currentCustomKeyboardStableIdCandidate() ?: customLayouts.firstOrNull()?.stableId.orEmpty())
         state.mode = splitMode(type)
