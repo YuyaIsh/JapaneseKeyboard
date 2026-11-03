@@ -263,7 +263,7 @@ class SplitKeyboardServiceSyncTest {
         call("scheduleSplitCandidates")
         shadowOf(Looper.getMainLooper()).idle()
         val left = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.MAIN), "adapter")
-        assertTrue(left.buildZeroQueryDisplayTextsForTesting().contains("古い履歴"))
+        assertTrue(left.buildZeroQueryDisplayTextsForTesting().isEmpty())
         Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
             ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).qwertyViewFloating))
         assertTrue("The old pane must not retain clickable zero-query candidates", left.buildZeroQueryDisplayTextsForTesting().isEmpty())
@@ -495,24 +495,22 @@ class SplitKeyboardServiceSyncTest {
         val right = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.SUB), "adapter")
         val left = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.MAIN), "adapter")
         assertEquals(listOf(candidate), right.suggestions)
-        assertTrue(left.suggestions.isEmpty())
-        val stale = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate, Int) -> Unit>(right, "onItemClickListener")
-        Reflect.callInstanceMethod<Unit>(service, "activateSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.MAIN))
-        stale(candidate, 0)
-        assertEquals(0, clicks)
         assertEquals(listOf(candidate), left.suggestions)
-        assertTrue(right.suggestions.isEmpty())
+        val shared = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate, Int) -> Unit>(right, "onItemClickListener")
+        Reflect.callInstanceMethod<Unit>(service, "activateSplitInput", ClassParameter.from(SplitSlot::class.java, SplitSlot.MAIN))
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(listOf(candidate), left.suggestions)
-        assertTrue(right.suggestions.isEmpty())
+        assertEquals(listOf(candidate), right.suggestions)
         verify(connection, never()).commitText(any(CharSequence::class.java), anyInt())
+        // A same-language callback remains valid across pane switches, even while inactive.
+        shared(candidate, 0)
         Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate, Int) -> Unit>(left, "onItemClickListener")(candidate, 0)
         assertEquals(1, clicks)
         assertEquals(result, connection.editable.toString())
         verify(connection, times(1)).commitText(result, 1)
     }
 
-    @Test fun helperActionsFromInactiveOrReplacedPaneAreIgnored() {
+    @Test fun helperActionsShareCompositionButReplacedPaneIsIgnored() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
         install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
@@ -523,6 +521,7 @@ class SplitKeyboardServiceSyncTest {
         Reflect.setField(service, "suggestionAdapter", source)
         fun activate(slot: SplitSlot) = Reflect.callInstanceMethod<Unit>(service, "activateSplitInput",
             ClassParameter.from(SplitSlot::class.java, slot))
+        text.value = "かな"
         activate(SplitSlot.SUB)
         val oldAdapter = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.SUB), "adapter")
         val stale = Reflect.getField<(SuggestionAdapter.HelperIcon) -> Unit>(oldAdapter, "onItemHelperIconClickListener")
@@ -530,12 +529,12 @@ class SplitKeyboardServiceSyncTest {
         assertEquals(1, actions)
         activate(SplitSlot.MAIN)
         stale(SuggestionAdapter.HelperIcon.UNDO)
-        assertEquals(1, actions)
+        assertEquals(2, actions)
         // A recreated editor surface can reuse the slot, but must not revive its old callbacks.
         install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
         activate(SplitSlot.SUB)
         stale(SuggestionAdapter.HelperIcon.UNDO)
-        assertEquals(1, actions)
+        assertEquals(2, actions)
     }
 
     @Test fun changingBetweenActualJapaneseAndEnglishCommitsOnceInBothDirections() {
@@ -857,6 +856,185 @@ class SplitKeyboardServiceSyncTest {
         assertSame(original, main.suggestionViewParent.parent)
         assertNull(Reflect.getField<Any?>(service, "candidateSurfaceHost"))
         assertEquals(SplitSlot.SUB, Reflect.getField<SplitSlot>(service, "activeSplitSlot"))
+    }
+
+    private fun mirroredCandidate(value: String = "今日") =
+        com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate(
+            value, 1.toByte(), 3.toUByte(), 0, "きょう")
+
+    private fun installMirroredFold(
+        layout: FoldKeyboardLayout = FoldKeyboardLayout.SPLIT,
+        language: InputMode = InputMode.ModeJapanese,
+    ): SuggestionAdapter {
+        Reflect.setField(service, "activeFoldLayout", layout)
+        layout.slots.forEach { install(it, TenKeyQWERTYMode.Default) }
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        Reflect.setField(service, "currentInputModeForSession", language)
+        inputs.values.forEach { Reflect.setField(it, "inputMode", language) }
+        text.value = "きょう"
+        val source = SuggestionAdapter(java.util.concurrent.Executor { it.run() })
+        Reflect.setField(service, "suggestionAdapter", source)
+        source.suggestions = listOf(mirroredCandidate())
+        call("refreshSplitCandidates")
+        return source
+    }
+
+    private fun mirroredPane(slot: SplitSlot) =
+        Reflect.getField<SuggestionAdapter>(inputs.getValue(slot), "adapter")
+
+    private fun mirroredAction(slot: SplitSlot, longPress: Boolean = false) =
+        Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate, Int) -> Unit>(
+            mirroredPane(slot), if (longPress) "onItemLongClickListener" else "onItemClickListener")
+
+    @Test fun mixedLanguagesOnlyShowCandidatesForTheComposingLanguageInBothDirections() {
+        val source = installMirroredFold()
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "inputMode", InputMode.ModeEnglish)
+        call("refreshSplitCandidates")
+        assertEquals(source.suggestions, mirroredPane(SplitSlot.MAIN).suggestions)
+        assertTrue(mirroredPane(SplitSlot.SUB).suggestions.isEmpty())
+        select(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        text.value = "hello"
+        source.suggestions = listOf(mirroredCandidate("hello"))
+        call("refreshSplitCandidates")
+        assertTrue(mirroredPane(SplitSlot.MAIN).suggestions.isEmpty())
+        assertEquals(source.suggestions, mirroredPane(SplitSlot.SUB).suggestions)
+    }
+
+    @Test fun inactiveSameLanguageStripAcceptsClickAndLongPressWithoutActivatingOrCommitting() {
+        for (language in listOf(InputMode.ModeJapanese, InputMode.ModeEnglish)) {
+            val source = installMirroredFold(language = language)
+            var clicks = 0
+            var longPresses = 0
+            source.setOnItemClickListener { _, _ -> clicks++ }
+            source.setOnItemLongClickListener { _, _ -> longPresses++ }
+            val connection = mock(android.view.inputmethod.InputConnection::class.java)
+            doReturn(connection).`when`(service).getCurrentInputConnection()
+            mirroredAction(SplitSlot.SUB, longPress = true)(mirroredCandidate(), 0)
+            mirroredAction(SplitSlot.SUB)(mirroredCandidate(), 0)
+            assertEquals(1, clicks)
+            assertEquals(1, longPresses)
+            assertEquals(SplitSlot.MAIN, Reflect.getField<SplitSlot>(service, "activeSplitSlot"))
+            assertEquals("きょう", text.value)
+            verify(connection, never()).commitText(any(CharSequence::class.java), anyInt())
+            verify(connection, never()).finishComposingText()
+        }
+    }
+
+    @Test fun sharedCandidateRevisionCanOnlyBeClickedOnceBeforeAsynchronousCommitCompletes() {
+        val source = installMirroredFold()
+        var commits = 0
+        // Deliberately retain the reading and source candidates: the real commit can suspend.
+        source.setOnItemClickListener { _, _ -> commits++ }
+        val left = mirroredAction(SplitSlot.MAIN)
+        val right = mirroredAction(SplitSlot.SUB)
+        right(mirroredCandidate(), 0)
+        left(mirroredCandidate(), 0)
+        right(mirroredCandidate(), 0)
+        assertEquals(1, commits)
+        assertEquals("きょう", text.value)
+        call("refreshSplitCandidates")
+        mirroredAction(SplitSlot.MAIN)(mirroredCandidate(), 0)
+        assertEquals("Painting again must not reopen an already claimed source revision", 1, commits)
+        source.suggestions = listOf(mirroredCandidate("京"))
+        call("refreshSplitCandidates")
+        mirroredAction(SplitSlot.MAIN)(mirroredCandidate("京"), 0)
+        assertEquals("New dictionary results must not reopen a pending commit", 1, commits)
+        Reflect.getField<CandidateRefreshCoordinator>(service, "candidateRefreshCoordinator")
+            .request("きょう", CandidateShowFlag.Updating)
+        call("refreshSplitCandidates")
+        mirroredAction(SplitSlot.MAIN)(mirroredCandidate("京"), 0)
+        assertEquals(2, commits)
+    }
+
+    @Test fun oldSameLanguageActionsRejectTextChangesAndSourceReturningToEqualCandidates() {
+        val source = installMirroredFold()
+        var clicks = 0
+        var longPresses = 0
+        source.setOnItemClickListener { _, _ -> clicks++ }
+        source.setOnItemLongClickListener { _, _ -> longPresses++ }
+        val oldClick = mirroredAction(SplitSlot.SUB)
+        val oldLongPress = mirroredAction(SplitSlot.SUB, longPress = true)
+        text.value = "きょ"
+        oldClick(mirroredCandidate(), 0)
+        oldLongPress(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+        assertEquals(0, longPresses)
+        text.value = "きょう"
+        source.suggestions = listOf(mirroredCandidate("京"))
+        source.suggestions = listOf(mirroredCandidate())
+        oldClick(mirroredCandidate(), 0)
+        oldLongPress(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+        assertEquals(0, longPresses)
+        call("refreshSplitCandidates")
+        mirroredAction(SplitSlot.SUB, longPress = true)(mirroredCandidate(), 0)
+        mirroredAction(SplitSlot.SUB)(mirroredCandidate(), 0)
+        assertEquals(1, clicks)
+        assertEquals(1, longPresses)
+    }
+
+    @Test fun oldActionsRejectLanguageChangesAndInvalidatedEditorEvenIfLanguageReturns() {
+        val source = installMirroredFold()
+        var clicks = 0
+        var longPresses = 0
+        source.setOnItemClickListener { _, _ -> clicks++ }
+        source.setOnItemLongClickListener { _, _ -> longPresses++ }
+        val oldClick = mirroredAction(SplitSlot.SUB)
+        val oldLongPress = mirroredAction(SplitSlot.SUB, longPress = true)
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "inputMode", InputMode.ModeEnglish)
+        oldClick(mirroredCandidate(), 0)
+        oldLongPress(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+        assertEquals(0, longPresses)
+        Reflect.getField<CandidateRefreshCoordinator>(service, "candidateRefreshCoordinator").invalidate()
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "inputMode", InputMode.ModeJapanese)
+        oldClick(mirroredCandidate(), 0)
+        oldLongPress(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+        assertEquals(0, longPresses)
+        call("refreshSplitCandidates")
+        val beforeEditorReset = mirroredAction(SplitSlot.SUB)
+        Reflect.getField<com.kazumaproject.markdownhelperkeyboard.ime_service.EditorMutationRevision>(
+            service, "editorMutationRevision").restart()
+        beforeEditorReset(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+    }
+
+    @Test fun lateCandidatesAndZeroQueryHistoryStayHiddenWithoutComposition() {
+        val source = installMirroredFold()
+        var clicks = 0
+        source.setOnItemClickListener { _, _ -> clicks++ }
+        val oldClick = mirroredAction(SplitSlot.SUB)
+        text.value = ""
+        Reflect.getField<CandidateRefreshCoordinator>(service, "candidateRefreshCoordinator").invalidate()
+        // A delayed dictionary result arrives after reset, before the posted repaint.
+        call("scheduleSplitCandidates")
+        source.suggestions = listOf(mirroredCandidate("遅延候補"))
+        shadowOf(Looper.getMainLooper()).idle()
+        SplitSlot.entries.forEach { assertTrue(mirroredPane(it).suggestions.isEmpty()) }
+        oldClick(mirroredCandidate(), 0)
+        assertEquals(0, clicks)
+        source.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(
+            listOf(mirroredCandidate("履歴"))))
+        call("refreshSplitCandidates")
+        SplitSlot.entries.forEach { assertEquals(0, mirroredPane(it).buildDisplayItemKindsForTesting().size) }
+        text.value = "きょう"
+        call("refreshSplitCandidates")
+        SplitSlot.entries.forEach { assertEquals(0, mirroredPane(it).buildDisplayItemKindsForTesting().size) }
+    }
+
+    @Test fun singleFoldPaneKeepsCandidateSelectionForEitherDockEdge() {
+        for (layout in listOf(FoldKeyboardLayout.LEFT, FoldKeyboardLayout.RIGHT)) {
+            val source = installMirroredFold(layout)
+            var clicks = 0
+            source.setOnItemClickListener { _, _ -> clicks++ }
+            assertEquals(listOf(mirroredCandidate()), mirroredPane(SplitSlot.MAIN).suggestions)
+            mirroredAction(SplitSlot.MAIN)(mirroredCandidate(), 0)
+            assertEquals(1, clicks)
+            text.value = ""
+            call("refreshSplitCandidates")
+            assertTrue(mirroredPane(SplitSlot.MAIN).suggestions.isEmpty())
+        }
     }
 
 }

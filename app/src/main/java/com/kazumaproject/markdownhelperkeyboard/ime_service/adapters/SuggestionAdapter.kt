@@ -333,12 +333,22 @@ class SuggestionAdapter internal constructor(
     private var candidateEmptyDrawableTextColor: Int? = null
     private var released: Boolean = false
     private var displayGeneration: Int = 0
+    private var contentRevision: Long = 0
+    private var consumedSplitClick: Any? = null
+    private var splitMirror: Boolean = false
     private var committedStartAnchorSignature: StartAnchorSignature? = null
     private var currentContent: CandidateStripContent = CandidateStripContent.Empty
     private var lastSubmittedDisplayItems: List<SuggestionDisplayItem> = emptyList()
 
     /** Independent split strip: share data and commands, never framework-owned inline Views. */
-    fun mirrorSplitContentFrom(source: SuggestionAdapter, canHandleActions: () -> Boolean = { true }) {
+    fun mirrorSplitContentFrom(
+        source: SuggestionAdapter,
+        consumeCandidateClicks: Boolean = false,
+        candidateActionSession: Any? = null,
+        isCandidateEnabled: (Candidate) -> Boolean = { true },
+        canHandleActions: () -> Boolean = { true },
+    ) {
+        splitMirror = consumeCandidateClicks
         clipboardText = source.clipboardText
         clipboardBitmap = source.clipboardBitmap
         undoText = source.undoText
@@ -365,10 +375,23 @@ class SuggestionAdapter internal constructor(
         candidateItemColorState.setColors(source.candidateItemColorState.backgroundColor, source.candidateItemColorState.pressedBackgroundColor)
         // DiffUtil can leave an old holder attached until the replacement list commits.
         // A pane/session handover must also invalidate that holder's captured commands.
+        val sourceRevision = source.contentRevision
+        val action = candidateActionSession ?: sourceRevision
+        var mirrorRevision = -1L
         fun currentCandidate(candidate: Candidate, position: Int) =
-            canHandleActions() && currentContent.candidatesForClicks().getOrNull(position) == candidate &&
+            !released && !source.released && contentRevision == mirrorRevision &&
+                source.contentRevision == sourceRevision && canHandleActions() && isCandidateEnabled(candidate) &&
+                (!consumeCandidateClicks || source.consumedSplitClick != action) &&
+                currentContent.candidatesForClicks().getOrNull(position) == candidate &&
                 source.currentContent.candidatesForClicks().getOrNull(position) == candidate
-        onItemClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemClickListener?.invoke(a, b) }
+        onItemClickListener = { a, b ->
+            if (currentCandidate(a, b)) {
+                // Both pane adapters claim the same composing request before forwarding, including
+                // when conversion/learning work completes asynchronously after the tap.
+                if (consumeCandidateClicks) source.consumedSplitClick = action
+                source.onItemClickListener?.invoke(a, b)
+            }
+        }
         onItemLongClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemLongClickListener?.invoke(a, b) }
         onItemHelperIconClickListener = { a -> if (canHandleActions()) source.onItemHelperIconClickListener?.invoke(a) }
         onItemHelperIconLongClickListener = { a -> if (canHandleActions()) source.onItemHelperIconLongClickListener?.invoke(a) }
@@ -382,9 +405,14 @@ class SuggestionAdapter internal constructor(
         }
         onZeroQueryCloseClickListener = { if (canHandleActions()) source.onZeroQueryCloseClickListener?.invoke() }
         onShowSoftKeyboardClick = { if (canHandleActions()) source.onShowSoftKeyboardClick?.invoke() }
-        val content = if (source.currentContent is CandidateStripContent.CustomLayoutPicker)
+        val content = if (source.currentContent is CandidateStripContent.CustomLayoutPicker ||
+            (consumeCandidateClicks && source.currentContent is CandidateStripContent.ZeroQuerySuggestions))
             CandidateStripContent.Empty else source.currentContent
         submitContent(content, InlineSuggestionStripState())
+        mirrorRevision = contentRevision
+        // Equal candidates can belong to a new composing/editor request. Refresh attached
+        // holders so their captured action guards follow that request without moving scroll.
+        if (consumeCandidateClicks) notifyItemRangeChanged(0, itemCount)
         updateHighlightPosition(source.highlightedPosition)
     }
 
@@ -810,6 +838,7 @@ class SuggestionAdapter internal constructor(
                 currentContent == content &&
                 inlineSuggestionStripState == inlineSuggestionState
             ) return
+            contentRevision++
             currentContent = content
             inlineSuggestionStripState = inlineSuggestionState
             candidateSuggestions = content.candidatesForClicks()
@@ -2161,11 +2190,13 @@ class SuggestionAdapter internal constructor(
             else -> ""
         }
         holder.itemView.isPressed = position == highlightedPosition
+        val click = onItemClickListener
+        val longClick = onItemLongClickListener
         holder.itemView.setOnClickListener {
-            onItemClickListener?.invoke(suggestion, position)
+            (if (splitMirror) click else onItemClickListener)?.invoke(suggestion, position)
         }
         holder.itemView.setOnLongClickListener {
-            onItemLongClickListener?.invoke(suggestion, position)
+            (if (splitMirror) longClick else onItemLongClickListener)?.invoke(suggestion, position)
             true
         }
     }
@@ -2254,11 +2285,13 @@ class SuggestionAdapter internal constructor(
         }
 
         holder.itemView.isPressed = position == highlightedPosition
+        val click = onItemClickListener
+        val longClick = onItemLongClickListener
         holder.itemView.setOnClickListener {
-            onItemClickListener?.invoke(suggestion, position)
+            (if (splitMirror) click else onItemClickListener)?.invoke(suggestion, position)
         }
         holder.itemView.setOnLongClickListener {
-            onItemLongClickListener?.invoke(suggestion, position)
+            (if (splitMirror) longClick else onItemLongClickListener)?.invoke(suggestion, position)
             true
         }
     }
