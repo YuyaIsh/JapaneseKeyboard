@@ -3122,6 +3122,15 @@ class FlickKeyboardView @JvmOverloads constructor(
             }
         }
 
+        // Cursor mode is enabled by a long-press callback during the same touch stream.
+        // Keep its origin current before that transition; no second ACTION_DOWN arrives.
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN ||
+            action == MotionEvent.ACTION_MOVE
+        ) {
+            cursorInitialX = event.getX(pointerIndex)
+            cursorInitialY = event.getY(pointerIndex)
+        }
+
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 motionTargets.clear()
