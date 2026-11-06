@@ -14192,9 +14192,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                         dakutenSmallActionForSumire()
                     }
 
-                    KeyAction.ToggleDakuten -> {
-                        dakutenSmallActionForSumire()
-                    }
+                    // The selected action is applied once on release, including after a long press.
+                    KeyAction.ToggleDakuten -> {}
 
                     KeyAction.ToggleDakutenOnly -> {}
 

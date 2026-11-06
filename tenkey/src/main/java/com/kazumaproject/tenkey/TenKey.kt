@@ -1480,11 +1480,11 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                     if (keyboardSkinId != KeyboardSkinId.DEFAULT) hideAllPopWindow()
                     skinGuide?.dismiss()
                     skinLongPress.clear()
-                    val key = pressedKeyByMotionEvent(event, 0)
+                    val key = pressedKeyByMotionEvent(event, event.actionIndex)
                     flickListener?.onFlick(GestureType.Down, key, null)
 
                     val (initialX, initialY) = getRawCoordinates(event, event.actionIndex)
-                    pressedKey = PressedKey(key = key, pointer = 0, initialX = initialX, initialY = initialY)
+                    pressedKey = PressedKey(key = key, pointer = event.getPointerId(event.actionIndex), initialX = initialX, initialY = initialY)
 
                     if (isCursorMode) {
                         flickTextPreviewEmitter.cancel()
@@ -1528,7 +1528,7 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                     }
 
                     if (pressedKey.pointer == event.getPointerId(event.actionIndex)) {
-                        val gestureType = getGestureType(event)
+                        val gestureType = getGestureType(event, event.actionIndex)
                         Log.d("TenKey: ACTION_UP in pointer", "called $pressedKey")
 
                         dispatchResolvedGesture(pressedKey.key, gestureType)
@@ -1550,12 +1550,15 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    // PressedKey stores a stable pointer ID; MotionEvent coordinates use indices.
+                    val pointerIndex = event.findPointerIndex(pressedKey.pointer)
+                    if (pressedKey.key == Key.NotSelected || pointerIndex < 0) return false
                     if (isCursorMode) {
                         // sensitivity threshold in pixels
                         val threshold = 16f
 
                         // 1) get the tracked pointer index
-                        val pointer = pressedKey.pointer
+                        val pointer = pointerIndex
 
                         // 2) read its current raw X–Y
                         val (currentX, currentY) = getRawCoordinates(event, pointer)
@@ -1600,11 +1603,7 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                         return true
                     }
 
-                    val gestureType = if (event.pointerCount == 1) {
-                        getGestureType(event, 0)
-                    } else {
-                        getGestureType(event, pressedKey.pointer)
-                    }
+                    val gestureType = getGestureType(event, pointerIndex)
                     flickTextPreviewEmitter.update(
                         resolveTextSelection(pressedKey.key, gestureType)
                     )
@@ -1643,14 +1642,15 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                     if (event.pointerCount == 2) {
                         isLongPressed = false
                         val pointer = event.getPointerId(event.actionIndex)
-                        val key = pressedKeyByMotionEvent(event, pointer)
-                        val gestureType2 = getGestureType(
-                            event, if (pointer == 0) 1 else 0
-                        )
+                        val key = pressedKeyByMotionEvent(event, event.actionIndex)
                         if (pressedKey.key == Key.KeyDakutenSmall && currentInputMode.value == InputMode.ModeNumber) {
                             setNumberSmallKeyPresentation()
                         }
-                        dispatchResolvedGesture(pressedKey.key, gestureType2)
+                        val previousPointerIndex = event.findPointerIndex(pressedKey.pointer)
+                        if (pressedKey.key != Key.NotSelected && previousPointerIndex >= 0) {
+                            val gestureType = getGestureType(event, previousPointerIndex)
+                            dispatchResolvedGesture(pressedKey.key, gestureType)
+                        }
                         (getButtonFromKey(pressedKey.key) as? AppCompatButton)?.let { button ->
                             setTextForMode(button, currentInputMode.value)
                         }
@@ -1680,7 +1680,7 @@ class TenKey(context: Context, attributeSet: AttributeSet) :
                             resetLongPressAction()
                             if (isCursorMode) return true
                             val gestureType = getGestureType(
-                                event, event.getPointerId(event.actionIndex)
+                                event, event.actionIndex
                             )
                             Log.d("TenKey: ACTION_POINTER_UP", "called [${pressedKey.key}]")
                             dispatchResolvedGesture(pressedKey.key, gestureType)
