@@ -44,6 +44,7 @@ class UserDictionaryFragment : Fragment() {
     private var _binding: FragmentUserDictionaryBinding? = null
     private val binding get() = _binding!!
     private lateinit var userWordAdapter: UserWordAdapter
+    private var draftState: Bundle? = null
     private var allUserWords: List<UserWord> = emptyList()
     private var userDictionarySearchQuery: String = ""
 
@@ -84,7 +85,22 @@ class UserDictionaryFragment : Fragment() {
         setupListeners()
         observeViewModel()
         setupSpinner()
-        resetInputFields()
+        restoreDraft(savedInstanceState ?: draftState)
+    }
+
+    private fun restoreDraft(restoredDraft: Bundle?) {
+        if (restoredDraft?.getBoolean("add_word_visible") == true) {
+            showUserDictionaryDraft(
+                binding,
+                restoredDraft.getString("add_word_reading").orEmpty(),
+                restoredDraft.getString("add_word_output").orEmpty()
+            )
+        } else {
+            resetInputFields()
+            UserDictionaryAddRequest.takeDraft(arguments)?.let { (reading, output) ->
+                showUserDictionaryDraft(binding, reading, output)
+            }
+        }
     }
 
     private fun setupMenu() {
@@ -561,7 +577,19 @@ class UserDictionaryFragment : Fragment() {
         binding.editTextReading.text?.clear()
     }
 
+    private fun captureDraft(): Bundle = Bundle().apply {
+        putBoolean("add_word_visible", !binding.cardViewAddWord.isGone)
+        putString("add_word_reading", binding.editTextReading.text?.toString())
+        putString("add_word_output", binding.editTextWord.text?.toString())
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putAll(if (_binding != null) captureDraft() else draftState ?: Bundle())
+    }
+
     override fun onDestroyView() {
+        draftState = captureDraft()
         binding.userDictionaryFastScroller.detachFromRecyclerView()
         super.onDestroyView()
         _binding = null

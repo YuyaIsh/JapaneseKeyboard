@@ -99,6 +99,16 @@ interface LearnDao {
     @Update
     suspend fun updateLearnedData(learnData: LearnEntity)
 
+    @Transaction
+    suspend fun promoteCandidate(entry: LearnEntity) {
+        val existing = findByInputAndOutput(entry.input, entry.out)
+        if (existing == null) {
+            insert(entry.copy(score = LearningScorePolicy.PREFERRED_CANDIDATE_SCORE))
+        } else if (existing.score > LearningScorePolicy.PREFERRED_CANDIDATE_SCORE) {
+            updateLearnedData(existing.copy(score = LearningScorePolicy.PREFERRED_CANDIDATE_SCORE))
+        }
+    }
+
     /**
      * A conversion can produce both segment entries and one complete phrase entry. Room generates
      * the transaction boundary for this default DAO method, so readers never observe a partial

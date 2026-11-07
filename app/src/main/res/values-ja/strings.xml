@@ -1817,4 +1817,7 @@
     <string name="qwerty_romaji_space_flick_summary">上フリックで、既存のローマ字のスペース設定と反対の幅（半角・全角）の空白を入力します。文字キーの上フリック設定とは独立しています。</string>
     <string name="qwerty_english_space_flick_summary">上フリックで全角スペースを入力します。未確定文字がある場合は確定して全角スペースを挿入します。タップは半角スペースのままです。文字キーの上フリック設定とは独立しています。</string>
     <string name="floating_keyboard_hide">キーボードを非表示</string>
+    <string name="candidate_action_promote">この変換を優先</string>
+    <string name="candidate_action_register">辞書に登録</string>
+    <string name="candidate_action_promote_learning_disabled">優先設定を保存しました。反映するには設定で学習辞書を有効にしてください。</string>
 </resources>

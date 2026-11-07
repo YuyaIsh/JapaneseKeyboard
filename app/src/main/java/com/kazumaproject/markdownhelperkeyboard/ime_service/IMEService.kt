@@ -207,6 +207,9 @@ import com.kazumaproject.markdownhelperkeyboard.converter.candidate.CANDIDATE_TY
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.CANDIDATE_TYPE_USER_TEMPLATE
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.CANDIDATE_TYPE_TEXT_MACRO
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate
+import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateLongPressPolicy
+import com.kazumaproject.markdownhelperkeyboard.learning.LearningEligibilityPolicy
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.user_dictionary.UserDictionaryAddRequest
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.CandidateConversionSegment
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.ExactInputCandidatePromotionPolicy
 import com.kazumaproject.markdownhelperkeyboard.converter.candidate.QWERTY_GLIDE_CANDIDATE_TYPE
@@ -446,6 +449,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     ClipboardHistoryToggleListener, InputManager.InputDeviceListener {
 
     private sealed class CandidateLongPressAction {
+        object Promote : CandidateLongPressAction()
+        object Register : CandidateLongPressAction()
         object ForgetLearnedEntry : CandidateLongPressAction()
         object HideWord : CandidateLongPressAction()
         object Translate : CandidateLongPressAction()
@@ -11247,16 +11252,46 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private var keyboardSelectionPopupWindow: PopupWindow? = null
 
+    private fun candidateActionsSecure(): Boolean {
+        val editor = currentInputEditorInfo
+        return editor == null || currentInputType.isPassword() || getCurrentInputTypeForIME2(editor).isPassword() ||
+            isPrivateMode || dictionaryInputConnection != null ||
+            (editor != null && ((editor.inputType and android.text.InputType.TYPE_MASK_CLASS) != android.text.InputType.TYPE_CLASS_TEXT ||
+                (editor.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0))
+    }
+
+    private fun canRegisterCandidate(candidate: Candidate, input: String): Boolean =
+        CandidateLongPressPolicy.canRegister(
+            candidate, input, currentInputModeForSession == InputMode.ModeJapanese, candidateActionsSecure()
+        )
+
     private fun shouldShowCandidateLongPressActions(candidate: Candidate): Boolean {
-        if (candidate.type == CANDIDATE_TYPE_TEXT_MACRO) return false
-        return candidate.type == CANDIDATE_TYPE_LEARNED_DICTIONARY ||
-            isNgWordEnable == true ||
-            gemmaTranslationManager.isTranslationAvailable()
+        if (candidateActionsSecure() ||
+            !CandidateLongPressPolicy.isText(candidate)) return false
+        return canRegisterCandidate(candidate, inputString.value) ||
+            candidate.type == CANDIDATE_TYPE_LEARNED_DICTIONARY ||
+            isNgWordEnable == true || gemmaTranslationManager.isTranslationAvailable()
     }
 
     private fun showCandidateLongPressActions(
         insertString: String, candidate: Candidate, candidatePosition: Int
     ) {
+        val request = candidateRefreshCoordinator.requests.value
+        val mutation = editorMutationRevision.current()
+        val tail = stringInTail.get()
+        val mode = currentInputModeForSession
+        val segment = bunsetsuConversionSession?.focusedIndex
+        val readingInput = bunsetsuConversionSession
+            ?.takeIf { isBunsetsuCursorMoveSessionActive() }
+            ?.let { it.segments.getOrNull(it.focusedIndex)?.reading } ?: insertString
+        val reading = CandidateLongPressPolicy.reading(candidate, readingInput)
+        val isCurrent = {
+            candidateRefreshCoordinator.isCurrent(request) && editorMutationRevision.isCurrent(mutation) &&
+                inputString.value == insertString && stringInTail.get() == tail &&
+                currentInputModeForSession == mode && bunsetsuConversionSession?.focusedIndex == segment &&
+                listOfNotNull(suggestionAdapter, suggestionAdapterFull).any { candidate in it.suggestions } &&
+                shouldShowCandidateLongPressActions(candidate)
+        }
         ioScope.launch {
             val enabledPromptTemplates = if (gemmaTranslationManager.isTranslationAvailable()) {
                 gemmaPromptTemplateRepository.getEnabledTemplates(customGemmaPromptActionLimit)
@@ -11269,7 +11304,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                     insertString = insertString,
                     candidate = candidate,
                     candidatePosition = candidatePosition,
-                    promptTemplates = enabledPromptTemplates
+                    promptTemplates = enabledPromptTemplates,
+                    reading = reading,
+                    isCurrent = isCurrent
                 )
             }
         }
@@ -11279,8 +11316,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         insertString: String,
         candidate: Candidate,
         candidatePosition: Int,
-        promptTemplates: List<GemmaPromptTemplate>
+        promptTemplates: List<GemmaPromptTemplate>,
+        reading: String,
+        isCurrent: () -> Boolean,
     ) {
+        if (!isCurrent()) return
         mainLayoutBinding?.let { mainView ->
             val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
             val popupView = inflater.inflate(R.layout.popup_list_layout, mainView.root, false)
@@ -11289,6 +11329,12 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             listView.choiceMode = ListView.CHOICE_MODE_SINGLE
 
             val actions = buildList {
+                if (canRegisterCandidate(candidate, insertString)) {
+                    if (LearningEligibilityPolicy.isEligible(
+                            reading, candidate.string, true
+                        )) add(CandidateLongPressAction.Promote)
+                    add(CandidateLongPressAction.Register)
+                }
                 if (candidate.type == CANDIDATE_TYPE_LEARNED_DICTIONARY) {
                     add(CandidateLongPressAction.ForgetLearnedEntry)
                 }
@@ -11306,6 +11352,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
             val items = actions.map { action ->
                 when (action) {
+                    CandidateLongPressAction.Promote -> getString(R.string.candidate_action_promote)
+                    CandidateLongPressAction.Register -> getString(R.string.candidate_action_register)
                     CandidateLongPressAction.ForgetLearnedEntry ->
                         getString(R.string.candidate_action_forget_learning)
                     CandidateLongPressAction.HideWord -> getString(R.string.candidate_action_hide_word)
@@ -11326,8 +11374,30 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             )
             listView.setOnItemClickListener { _, _, position, _ ->
                 Timber.d("candidate long click: $candidate $candidatePosition")
+                if (!isCurrent()) {
+                    keyboardSelectionPopupWindow?.dismiss()
+                    return@setOnItemClickListener
+                }
                 val selectedAction = actions.getOrNull(position)
                 when (selectedAction) {
+                    CandidateLongPressAction.Promote -> ioScope.launch {
+                        val promoted = learnRepository.promoteCandidate(reading, candidate.string, candidate.leftId, candidate.rightId)
+                        withContext(Dispatchers.Main) {
+                            if (isCurrent()) {
+                                if (promoted && isLearnDictionaryMode != true) {
+                                    Toast.makeText(this@IMEService, R.string.candidate_action_promote_learning_disabled, Toast.LENGTH_LONG).show()
+                                }
+                                requestCandidateRefresh(CandidateShowFlag.Updating)
+                            }
+                        }
+                    }
+                    CandidateLongPressAction.Register -> {
+                        startActivity(UserDictionaryAddRequest.createIntent(
+                            this, reading, candidate.string
+                        ))
+                        requestHideSelf(0)
+                    }
+
                     CandidateLongPressAction.ForgetLearnedEntry -> {
                         val reading = resolveLearnedCandidateReading(insertString, candidate)
                         if (reading.isNotEmpty()) {
@@ -23597,6 +23667,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         position: Int,
         displayedCandidates: List<Candidate>
     ): Int? {
+        if (displayedCandidates.getOrNull(position) != candidate) return null
         val session = bunsetsuConversionSession
         if (session == null || !isBunsetsuCursorMoveSessionActive()) {
             return position
