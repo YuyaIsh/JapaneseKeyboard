@@ -21,6 +21,7 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
 import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.ActivityMainBinding
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.user_dictionary.UserDictionaryAddRequest
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.kazumaproject.core.R as CoreR
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mainNavController: NavController
     private var bottomNavigationView: BottomNavigationView? = null
     private var currentDestinationId: Int? = null
+    private var pendingNavigationIntent: Intent? = null
     private val destinationsWithOwnToolbar = setOf(
         R.id.candidateViewHeightSettingFragment,
         R.id.candidateHeightLandscapeSettingFragment,
@@ -45,6 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingNavigationIntent = savedInstanceState?.getParcelable("pending_navigation_intent")
         val seedColor = appPreference.seedColor
 
         if (seedColor == 0x00000000) {
@@ -99,7 +102,21 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntent(intent)
+        // onNewIntent can run while FragmentManager still has saved state.
+        pendingNavigationIntent = intent
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putParcelable("pending_navigation_intent", pendingNavigationIntent)
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        pendingNavigationIntent?.let {
+            pendingNavigationIntent = null
+            handleIntent(it)
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -125,6 +142,14 @@ class MainActivity : AppCompatActivity() {
             when (request) {
                 "setting_fragment_request" -> {
                     navigateToPreferredSettingHome(navController)
+                    true
+                }
+
+                UserDictionaryAddRequest.REQUEST -> {
+                    navController.navigate(
+                        R.id.navigation_user_dictionary,
+                        UserDictionaryAddRequest.arguments(requireNotNull(intent))
+                    )
                     true
                 }
 

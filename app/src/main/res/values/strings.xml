@@ -1819,4 +1819,7 @@
     <string name="qwerty_romaji_space_flick_summary">Flick up to insert the opposite space width to your Romaji space setting. Independent of letter-key up flicks.</string>
     <string name="qwerty_english_space_flick_summary">Flick up to insert a full-width space. If there is composing text, commit it with a full-width space. Tapping still inserts a half-width space. Independent of letter-key up flicks.</string>
     <string name="floating_keyboard_hide">Hide keyboard</string>
+    <string name="candidate_action_promote">Prefer this conversion</string>
+    <string name="candidate_action_register">Add to dictionary</string>
+    <string name="candidate_action_promote_learning_disabled">Preference saved. Enable the learning dictionary in settings to use it.</string>
 </resources>

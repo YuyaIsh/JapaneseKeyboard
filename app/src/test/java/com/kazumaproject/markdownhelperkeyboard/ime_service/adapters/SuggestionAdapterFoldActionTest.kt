@@ -105,6 +105,75 @@ class SuggestionAdapterFoldActionTest {
         assertEquals(1, clicks)
         source.release(); strip.release()
     }
+
+    @Test fun bothFoldPanesCanReopenLongPressWithoutConsumingCandidateOrAcceptingStaleHolders() {
+        val source = adapter()
+        val panes = listOf(adapter(), adapter())
+        val pressed = mutableListOf<Pair<Candidate, Int>>()
+        var commits = 0
+        var editor = 1
+        source.setOnItemLongClickListener { value, position -> pressed += value to position }
+        source.setOnItemClickListener { _, _ -> commits++ }
+        fun mirror() {
+            val capturedEditor = editor
+            panes.forEach {
+                it.mirrorSplitContentFrom(source, consumeCandidateClicks = true,
+                    candidateActionSession = capturedEditor) { editor == capturedEditor }
+            }
+        }
+        try {
+            source.suggestions = listOf(candidate)
+            mirror()
+            val old = panes.map { holder(it) }
+            old.forEach { it.itemView.performLongClick() }
+            old.forEach { it.itemView.performLongClick() }
+            assertEquals(List(4) { candidate to 0 }, pressed)
+            assertEquals("Opening either menu must not select a candidate", 0, commits)
+
+            editor = 2
+            mirror()
+            old.forEach { it.itemView.performLongClick() }
+            assertEquals(4, pressed.size)
+            val fresh = panes.map { holder(it) }
+            fresh.forEach { it.itemView.performLongClick() }
+            assertEquals(6, pressed.size)
+
+            source.suggestions = listOf(candidate.copy(string = "京"))
+            source.suggestions = listOf(candidate)
+            fresh.forEach { it.itemView.performLongClick() }
+            assertEquals("Equal replacement results must not revive old pane callbacks", 6, pressed.size)
+            mirror()
+            val current = panes.map { holder(it) }
+            current.first().itemView.performClick()
+            current.last().itemView.performLongClick()
+            assertEquals(1, commits)
+            assertEquals("A committed shared session cannot reopen a menu", 6, pressed.size)
+        } finally {
+            source.release()
+            panes.forEach { it.release() }
+        }
+    }
+
+    @Test fun disabledLoadingLongPressIsRejectedInBothFoldPanes() {
+        val source = adapter()
+        val panes = listOf(adapter(), adapter())
+        val loading = candidate.copy(string = "変換中")
+        val pressed = mutableListOf<Candidate>()
+        source.setOnItemLongClickListener { value, _ -> pressed += value }
+        try {
+            source.suggestions = listOf(loading, candidate)
+            panes.forEach {
+                it.mirrorSplitContentFrom(source, consumeCandidateClicks = true,
+                    isCandidateEnabled = { value -> value != loading })
+                holder(it, 0).itemView.performLongClick()
+                holder(it, 1).itemView.performLongClick()
+            }
+            assertEquals(listOf(candidate, candidate), pressed)
+        } finally {
+            source.release()
+            panes.forEach { it.release() }
+        }
+    }
     private fun idlePanel(clipboard: String) =
         com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.EmptyState(
             showShortcutEntry = false,

@@ -54,6 +54,19 @@ class LearnRepository @Inject constructor(
     suspend fun findLearnDataByInputAndOutput(input: String, output: String): LearnEntity? =
         learnDao.findByInputAndOutput(input, output)
 
+    /** Explicit preference changes the cost consumed by GraphBuilder without counting a commit. */
+    suspend fun promoteCandidate(
+        input: String,
+        output: String,
+        leftId: Short? = null,
+        rightId: Short? = null,
+    ): Boolean {
+        if (!LearningEligibilityPolicy.isEligible(input, output, true)) return false
+        learnDao.promoteCandidate(LearnEntity(input, output, leftId = leftId, rightId = rightId))
+        invalidateConversionSnapshot()
+        return true
+    }
+
     suspend fun existsDuplicateForUpdate(input: String, output: String, excludeId: Int): Boolean =
         learnDao.existsDuplicateForUpdate(input, output, excludeId)
 
