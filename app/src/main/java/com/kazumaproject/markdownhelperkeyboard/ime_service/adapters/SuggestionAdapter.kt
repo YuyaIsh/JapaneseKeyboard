@@ -344,6 +344,7 @@ class SuggestionAdapter internal constructor(
     fun mirrorSplitContentFrom(
         source: SuggestionAdapter,
         consumeCandidateClicks: Boolean = false,
+        hasComposition: Boolean = true,
         candidateActionSession: Any? = null,
         isCandidateEnabled: (Candidate) -> Boolean = { true },
         canHandleActions: () -> Boolean = { true },
@@ -378,9 +379,10 @@ class SuggestionAdapter internal constructor(
         val sourceRevision = source.contentRevision
         val action = candidateActionSession ?: sourceRevision
         var mirrorRevision = -1L
+        fun currentMirror() = !released && !source.released && contentRevision == mirrorRevision &&
+            source.contentRevision == sourceRevision && canHandleActions()
         fun currentCandidate(candidate: Candidate, position: Int) =
-            !released && !source.released && contentRevision == mirrorRevision &&
-                source.contentRevision == sourceRevision && canHandleActions() && isCandidateEnabled(candidate) &&
+            currentMirror() && isCandidateEnabled(candidate) &&
                 (!consumeCandidateClicks || source.consumedSplitClick != action) &&
                 currentContent.candidatesForClicks().getOrNull(position) == candidate &&
                 source.currentContent.candidatesForClicks().getOrNull(position) == candidate
@@ -393,21 +395,38 @@ class SuggestionAdapter internal constructor(
             }
         }
         onItemLongClickListener = { a, b -> if (currentCandidate(a, b)) source.onItemLongClickListener?.invoke(a, b) }
-        onItemHelperIconClickListener = { a -> if (canHandleActions()) source.onItemHelperIconClickListener?.invoke(a) }
-        onItemHelperIconLongClickListener = { a -> if (canHandleActions()) source.onItemHelperIconLongClickListener?.invoke(a) }
-        onShortcutItemClickListener = { a -> if (canHandleActions()) source.onShortcutItemClickListener?.invoke(a) }
-        onShortcutEntryClickListener = { a -> if (canHandleActions()) source.onShortcutEntryClickListener?.invoke(a) }
+        fun currentHelper(helper: HelperIcon): Boolean {
+            if (!currentMirror()) return false
+            val content = currentContent as? CandidateStripContent.EmptyState ?: return false
+            return when (helper) {
+                HelperIcon.UNDO -> content.quickActions.undoEnabled
+                HelperIcon.REDO -> content.quickActions.redoEnabled
+                HelperIcon.RECONVERT -> content.quickActions.reconvertEnabled
+                HelperIcon.PASTE -> content.clipboardPreview != null
+            }
+        }
+        onItemHelperIconClickListener = { a -> if (currentHelper(a)) source.onItemHelperIconClickListener?.invoke(a) }
+        onItemHelperIconLongClickListener = { a -> if (currentHelper(a)) source.onItemHelperIconLongClickListener?.invoke(a) }
+        onShortcutItemClickListener = { a -> if (currentMirror()) source.onShortcutItemClickListener?.invoke(a) }
+        onShortcutEntryClickListener = { a -> if (currentMirror()) source.onShortcutEntryClickListener?.invoke(a) }
         onZeroQueryCandidateClickListener = { a ->
-            if (canHandleActions() && (currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true &&
+            if (currentMirror() && (!consumeCandidateClicks || source.consumedSplitClick != action) &&
+                (currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true &&
                 (source.currentContent as? CandidateStripContent.ZeroQuerySuggestions)?.candidates?.contains(a) == true) {
+                if (consumeCandidateClicks) source.consumedSplitClick = action
                 source.onZeroQueryCandidateClickListener?.invoke(a)
             }
         }
-        onZeroQueryCloseClickListener = { if (canHandleActions()) source.onZeroQueryCloseClickListener?.invoke() }
-        onShowSoftKeyboardClick = { if (canHandleActions()) source.onShowSoftKeyboardClick?.invoke() }
-        val content = if (source.currentContent is CandidateStripContent.CustomLayoutPicker ||
-            (consumeCandidateClicks && source.currentContent is CandidateStripContent.ZeroQuerySuggestions))
-            CandidateStripContent.Empty else source.currentContent
+        onZeroQueryCloseClickListener = { if (currentMirror()) source.onZeroQueryCloseClickListener?.invoke() }
+        onShowSoftKeyboardClick = { if (currentMirror()) source.onShowSoftKeyboardClick?.invoke() }
+        // Keep the source resolver's supported idle panels, but never carry a composing
+        // candidate list into idle or a next-word panel into a new composition.
+        val content = when {
+            source.currentContent is CandidateStripContent.CustomLayoutPicker -> CandidateStripContent.Empty
+            consumeCandidateClicks && hasComposition && source.currentContent is CandidateStripContent.ZeroQuerySuggestions -> CandidateStripContent.Empty
+            consumeCandidateClicks && !hasComposition && source.currentContent is CandidateStripContent.Candidates -> CandidateStripContent.Empty
+            else -> source.currentContent
+        }
         submitContent(content, InlineSuggestionStripState())
         mirrorRevision = contentRevision
         // Equal candidates can belong to a new composing/editor request. Refresh attached
@@ -1666,6 +1685,8 @@ class SuggestionAdapter internal constructor(
         holder: QuickActionsViewHolder,
         state: QuickActionsState
     ) {
+        val click = onItemHelperIconClickListener
+        val longClick = onItemHelperIconLongClickListener
         val isDynamicColorEnable = DynamicColors.isDynamicColorAvailable()
         holder.apply {
             incognitoIcon?.apply {
@@ -1717,10 +1738,10 @@ class SuggestionAdapter internal constructor(
             undoIconParent?.apply {
                 isVisible = state.undoEnabled
                 setOnClickListener {
-                    onItemHelperIconClickListener?.invoke(HelperIcon.UNDO)
+                    (if (splitMirror) click else onItemHelperIconClickListener)?.invoke(HelperIcon.UNDO)
                 }
                 setOnLongClickListener {
-                    onItemHelperIconLongClickListener?.invoke(HelperIcon.UNDO)
+                    (if (splitMirror) longClick else onItemHelperIconLongClickListener)?.invoke(HelperIcon.UNDO)
                     true
                 }
             }
@@ -1728,10 +1749,10 @@ class SuggestionAdapter internal constructor(
             redoIconParent?.apply {
                 isVisible = state.redoEnabled
                 setOnClickListener {
-                    onItemHelperIconClickListener?.invoke(HelperIcon.REDO)
+                    (if (splitMirror) click else onItemHelperIconClickListener)?.invoke(HelperIcon.REDO)
                 }
                 setOnLongClickListener {
-                    onItemHelperIconLongClickListener?.invoke(HelperIcon.REDO)
+                    (if (splitMirror) longClick else onItemHelperIconLongClickListener)?.invoke(HelperIcon.REDO)
                     true
                 }
             }
@@ -1739,7 +1760,7 @@ class SuggestionAdapter internal constructor(
             reconvertIconParent?.apply {
                 isVisible = state.reconvertEnabled
                 setOnClickListener {
-                    onItemHelperIconClickListener?.invoke(HelperIcon.RECONVERT)
+                    (if (splitMirror) click else onItemHelperIconClickListener)?.invoke(HelperIcon.RECONVERT)
                 }
                 setOnLongClickListener {
                     false
@@ -1752,6 +1773,8 @@ class SuggestionAdapter internal constructor(
         holder: ClipboardPreviewViewHolder,
         state: ClipboardPreviewState
     ) {
+        val click = onItemHelperIconClickListener
+        val longClick = onItemHelperIconLongClickListener
         val isDynamicColorEnable = DynamicColors.isDynamicColorAvailable()
         Timber.d("SuggestionAdapter onBindClipboardPreviewViewHolder: ${state.clipboardText} ${state.pasteEnabled}")
         holder.itemView.translationX = if (state.offsetForLeadingShortcutEntry) {
@@ -1794,10 +1817,10 @@ class SuggestionAdapter internal constructor(
             clipboardPreviewTextDescription?.isVisible = state.clipboardDescriptionShown
             pasteIconParent?.apply {
                 setOnClickListener {
-                    onItemHelperIconClickListener?.invoke(HelperIcon.PASTE)
+                    (if (splitMirror) click else onItemHelperIconClickListener)?.invoke(HelperIcon.PASTE)
                 }
                 setOnLongClickListener {
-                    onItemHelperIconLongClickListener?.invoke(HelperIcon.PASTE)
+                    (if (splitMirror) longClick else onItemHelperIconLongClickListener)?.invoke(HelperIcon.PASTE)
                     true
                 }
             }
@@ -1905,6 +1928,7 @@ class SuggestionAdapter internal constructor(
         holder: ShortcutViewHolder,
         item: SuggestionDisplayItem.ShortcutItem,
     ) {
+        val click = onShortcutItemClickListener
         val shortcutType = item.shortcutType
         holder.imageView.apply {
             setImageResource(shortcutType.resolveShortcutIconResId())
@@ -1919,7 +1943,7 @@ class SuggestionAdapter internal constructor(
             if (adapterPosition != RecyclerView.NO_POSITION) {
                 val currentItem = displayItems.getOrNull(adapterPosition)
                 if (currentItem is SuggestionDisplayItem.ShortcutItem) {
-                    onShortcutItemClickListener?.invoke(currentItem.shortcutType)
+                    (if (splitMirror) click else onShortcutItemClickListener)?.invoke(currentItem.shortcutType)
                 }
             }
         }
@@ -1928,6 +1952,7 @@ class SuggestionAdapter internal constructor(
     private fun onBindShortcutEntryViewHolder(
         holder: ShortcutEntryViewHolder,
     ) {
+        val click = onShortcutEntryClickListener
         holder.imageView.apply {
             setImageResource(R.drawable.more_horiz_24px)
             contentDescription = context.getString(R.string.shortcut_entry_content_description)
@@ -1938,7 +1963,7 @@ class SuggestionAdapter internal constructor(
         holder.itemView.contentDescription =
             holder.itemView.context.getString(R.string.shortcut_entry_content_description)
         holder.itemView.setOnClickListener {
-            onShortcutEntryClickListener?.invoke(holder.itemView)
+            (if (splitMirror) click else onShortcutEntryClickListener)?.invoke(holder.itemView)
         }
     }
 
@@ -2204,6 +2229,7 @@ class SuggestionAdapter internal constructor(
     private fun onBindZeroQueryCloseViewHolder(
         holder: ZeroQueryViewHolder,
     ) {
+        val click = onZeroQueryCloseClickListener
         applyCandidateItemBackground(holder.itemView)
         holder.text.text = "[ ... ]"
         holder.text.textSize = candidateTextSize
@@ -2212,7 +2238,7 @@ class SuggestionAdapter internal constructor(
         }
         holder.itemView.isPressed = false
         holder.itemView.setOnClickListener {
-            onZeroQueryCloseClickListener?.invoke()
+            (if (splitMirror) click else onZeroQueryCloseClickListener)?.invoke()
         }
         holder.itemView.setOnLongClickListener {
             true
@@ -2223,6 +2249,7 @@ class SuggestionAdapter internal constructor(
         holder: ZeroQueryViewHolder,
         item: SuggestionDisplayItem.ZeroQueryCandidateItem,
     ) {
+        val click = onZeroQueryCandidateClickListener
         applyCandidateItemBackground(holder.itemView)
         holder.text.text = formatZeroQueryCandidateText(
             suggestion = item.candidate,
@@ -2234,7 +2261,7 @@ class SuggestionAdapter internal constructor(
         }
         holder.itemView.isPressed = false
         holder.itemView.setOnClickListener {
-            onZeroQueryCandidateClickListener?.invoke(item.candidate)
+            (if (splitMirror) click else onZeroQueryCandidateClickListener)?.invoke(item.candidate)
         }
         holder.itemView.setOnLongClickListener {
             true

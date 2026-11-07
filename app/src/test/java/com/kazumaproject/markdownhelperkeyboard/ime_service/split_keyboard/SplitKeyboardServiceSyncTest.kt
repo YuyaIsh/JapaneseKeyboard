@@ -17,6 +17,10 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.FloatingKeyboardLayoutBinding
 import com.kazumaproject.markdownhelperkeyboard.ime_service.IMEService
 import com.kazumaproject.markdownhelperkeyboard.ime_service.adapters.SuggestionAdapter
+import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent
+import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.QuickActionsState
+import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.ClipboardPreviewState
+import com.kazumaproject.markdownhelperkeyboard.short_cut.ShortcutType
 import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateRefreshCoordinator
 import com.kazumaproject.markdownhelperkeyboard.ime_service.models.CandidateShowFlag
 import com.kazumaproject.markdownhelperkeyboard.ime_service.state.KeyboardType
@@ -263,10 +267,12 @@ class SplitKeyboardServiceSyncTest {
         call("scheduleSplitCandidates")
         shadowOf(Looper.getMainLooper()).idle()
         val left = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.MAIN), "adapter")
-        assertTrue(left.buildZeroQueryDisplayTextsForTesting().isEmpty())
+        assertTrue(left.buildZeroQueryDisplayTextsForTesting().contains("古い履歴"))
         Reflect.callInstanceMethod<Unit>(service, "activateSplitView",
             ClassParameter.from(View::class.java, bindings.getValue(SplitSlot.SUB).qwertyViewFloating))
         assertTrue("The old pane must not retain clickable zero-query candidates", left.buildZeroQueryDisplayTextsForTesting().isEmpty())
+        assertTrue("Japanese next-word content must not move to the English pane",
+            Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.SUB), "adapter").buildZeroQueryDisplayTextsForTesting().isEmpty())
         // Also clear non-active strips when an asynchronous source update arrives.
         left.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(listOf(candidate)))
         call("scheduleSplitCandidates")
@@ -510,7 +516,7 @@ class SplitKeyboardServiceSyncTest {
         verify(connection, times(1)).commitText(result, 1)
     }
 
-    @Test fun helperActionsShareCompositionButReplacedPaneIsIgnored() {
+    @Test fun idleHelperActionsRequireTheActivePaneAndRejectReplacedPane() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
         install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
@@ -521,7 +527,7 @@ class SplitKeyboardServiceSyncTest {
         Reflect.setField(service, "suggestionAdapter", source)
         fun activate(slot: SplitSlot) = Reflect.callInstanceMethod<Unit>(service, "activateSplitInput",
             ClassParameter.from(SplitSlot::class.java, slot))
-        text.value = "かな"
+        source.submitContent(idleFoldPanel())
         activate(SplitSlot.SUB)
         val oldAdapter = Reflect.getField<SuggestionAdapter>(inputs.getValue(SplitSlot.SUB), "adapter")
         val stale = Reflect.getField<(SuggestionAdapter.HelperIcon) -> Unit>(oldAdapter, "onItemHelperIconClickListener")
@@ -529,12 +535,12 @@ class SplitKeyboardServiceSyncTest {
         assertEquals(1, actions)
         activate(SplitSlot.MAIN)
         stale(SuggestionAdapter.HelperIcon.UNDO)
-        assertEquals(2, actions)
+        assertEquals(1, actions)
         // A recreated editor surface can reuse the slot, but must not revive its old callbacks.
         install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
         activate(SplitSlot.SUB)
         stale(SuggestionAdapter.HelperIcon.UNDO)
-        assertEquals(2, actions)
+        assertEquals(1, actions)
     }
 
     @Test fun changingBetweenActualJapaneseAndEnglishCommitsOnceInBothDirections() {
@@ -1000,7 +1006,7 @@ class SplitKeyboardServiceSyncTest {
         assertEquals(0, clicks)
     }
 
-    @Test fun lateCandidatesAndZeroQueryHistoryStayHiddenWithoutComposition() {
+    @Test fun lateCompositionCandidatesStayHiddenWhileFreshIdleZeroQueryRemainsActiveOnly() {
         val source = installMirroredFold()
         var clicks = 0
         source.setOnItemClickListener { _, _ -> clicks++ }
@@ -1017,7 +1023,8 @@ class SplitKeyboardServiceSyncTest {
         source.submitContent(com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateStripContent.ZeroQuerySuggestions(
             listOf(mirroredCandidate("履歴"))))
         call("refreshSplitCandidates")
-        SplitSlot.entries.forEach { assertEquals(0, mirroredPane(it).buildDisplayItemKindsForTesting().size) }
+        assertTrue(mirroredPane(SplitSlot.MAIN).buildZeroQueryDisplayTextsForTesting().contains("履歴"))
+        assertEquals(0, mirroredPane(SplitSlot.SUB).buildDisplayItemKindsForTesting().size)
         text.value = "きょう"
         call("refreshSplitCandidates")
         SplitSlot.entries.forEach { assertEquals(0, mirroredPane(it).buildDisplayItemKindsForTesting().size) }
@@ -1035,6 +1042,116 @@ class SplitKeyboardServiceSyncTest {
             call("refreshSplitCandidates")
             assertTrue(mirroredPane(SplitSlot.MAIN).suggestions.isEmpty())
         }
+    }
+
+    private fun idleFoldPanel() = CandidateStripContent.EmptyState(
+        showShortcutEntry = true,
+        quickActions = QuickActionsState(false, true, false, false, "Undo", ""),
+        clipboardPreview = ClipboardPreviewState("copied", null, true, false),
+        shortcutItems = listOf(ShortcutType.SETTINGS), showIntegratedShortcuts = false)
+
+    @Test fun supportedIdlePanelsStayOnActiveFoldPaneIncludingWithMixedLanguages() {
+        val source = installMirroredFold()
+        text.value = ""
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "inputMode", InputMode.ModeEnglish)
+        val panels = listOf(
+            idleFoldPanel(),
+            CandidateStripContent.SelectionActions(listOf(mirroredCandidate("Translate")), true),
+            CandidateStripContent.ExpandedShortcutEntry(listOf(ShortcutType.SETTINGS)))
+        for (panel in panels) {
+            source.submitContent(panel)
+            call("refreshSplitCandidates")
+            assertEquals(source.buildDisplayItemKindsForTesting(), mirroredPane(SplitSlot.MAIN).buildDisplayItemKindsForTesting())
+            assertTrue(mirroredPane(SplitSlot.SUB).buildDisplayItemKindsForTesting().isEmpty())
+        }
+        select(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        source.submitContent(idleFoldPanel())
+        call("refreshSplitCandidates")
+        assertTrue(mirroredPane(SplitSlot.MAIN).buildDisplayItemKindsForTesting().isEmpty())
+        assertEquals(source.buildDisplayItemKindsForTesting(), mirroredPane(SplitSlot.SUB).buildDisplayItemKindsForTesting())
+    }
+
+    private fun showBundledNextWordOnIdleFold(): SuggestionAdapter {
+        val source = installMirroredFold()
+        text.value = ""
+        source.suggestions = emptyList()
+        Reflect.setField(service, "zeroQuerySuggestionPreference", true)
+        service.customZeroQueryRepository = mock(com.kazumaproject.markdownhelperkeyboard.repository.CustomZeroQueryRepository::class.java)
+        kotlinx.coroutines.runBlocking {
+            `when`(service.customZeroQueryRepository.lookup("あけまして")).thenReturn(emptyList())
+        }
+        // Mockito copies constructor lazies; bind the real lookup to this fixture's injected repository.
+        val lookup = com.kazumaproject.markdownhelperkeyboard.zeroquery.ZeroQueryLookupUseCase(
+            service.customZeroQueryRepository,
+            com.kazumaproject.markdownhelperkeyboard.zeroquery.LazyZeroQueryProvider {
+                com.kazumaproject.markdownhelperkeyboard.zeroquery.ZeroQueryProvider(
+                    com.kazumaproject.markdownhelperkeyboard.zeroquery.AndroidZeroQueryAssetReader(context.assets))
+            })
+        Reflect.setField(service, "zeroQueryLookupUseCase\$delegate", lazyOf(lookup))
+        Reflect.callInstanceMethod<Unit>(service, "rememberZeroQueryKeyAfterCommit",
+            ClassParameter.from(String::class.java, "あけまして"))
+        call("consumePendingZeroQueryAfterCommit")
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
+        while (!Reflect.getField<Boolean>(service, "zeroQueryVisible") && System.nanoTime() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(5)
+        }
+        assertTrue("Bundled next-word lookup must complete", Reflect.getField(service, "zeroQueryVisible"))
+        call("refreshSplitCandidates")
+        return source
+    }
+
+    @Test fun enabledNextWordPredictionIsAccessibleOnlyOnActiveIdleFoldPaneAndCommitsOnce() {
+        val source = showBundledNextWordOnIdleFold()
+        assertTrue(mirroredPane(SplitSlot.MAIN).buildZeroQueryDisplayTextsForTesting().contains("おめでとうございます"))
+        assertTrue(mirroredPane(SplitSlot.SUB).buildZeroQueryDisplayTextsForTesting().isEmpty())
+        val connection = mock(android.view.inputmethod.InputConnection::class.java)
+        doReturn(connection).`when`(service).getCurrentInputConnection()
+        source.setOnZeroQueryCandidateClickListener { candidate ->
+            Reflect.callInstanceMethod<Unit>(service, "commitZeroQueryCandidate",
+                ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate::class.java, candidate))
+        }
+        val candidate = Reflect.getField<List<com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate>>(service, "zeroQueryCandidates").single()
+        val choose = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate) -> Unit>(
+            mirroredPane(SplitSlot.MAIN), "onZeroQueryCandidateClickListener")
+        Reflect.getField<CandidateRefreshCoordinator>(service, "candidateRefreshCoordinator")
+            .request("", CandidateShowFlag.Idle)
+        // Equal source data must renew the current holder guards.
+        Reflect.callInstanceMethod<Unit>(service, "refreshCandidateStripContent",
+            ClassParameter.from(Boolean::class.javaPrimitiveType!!, false),
+            ClassParameter.from(Boolean::class.javaPrimitiveType!!, false))
+        shadowOf(Looper.getMainLooper()).idle()
+        choose(candidate) // Old request callback stays invalid after the repaint.
+        verify(connection, never()).commitText(any(CharSequence::class.java), anyInt())
+        val currentChoose = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate) -> Unit>(
+            mirroredPane(SplitSlot.MAIN), "onZeroQueryCandidateClickListener")
+        currentChoose(candidate)
+        currentChoose(candidate)
+        verify(connection, times(1)).commitText("おめでとうございます", 1)
+        call("refreshSplitCandidates")
+        assertTrue(mirroredPane(SplitSlot.MAIN).buildZeroQueryDisplayTextsForTesting().isEmpty())
+    }
+
+    @Test fun editorReplacementClearsNextWordAndRejectsOldFoldActionsAndLateCompositionCandidates() {
+        showBundledNextWordOnIdleFold()
+        val old = mirroredPane(SplitSlot.MAIN)
+        val choose = Reflect.getField<(com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate) -> Unit>(old, "onZeroQueryCandidateClickListener")
+        val candidate = Reflect.getField<List<com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate>>(service, "zeroQueryCandidates").single()
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        assertTrue(Reflect.getField<List<*>>(service, "zeroQueryCandidates").isEmpty())
+        val replacement = mock(android.view.inputmethod.InputConnection::class.java)
+        doReturn(replacement).`when`(service).getCurrentInputConnection()
+        val source = installMirroredFold()
+        text.value = ""
+        source.suggestions = listOf(mirroredCandidate("old editor result"))
+        call("refreshSplitCandidates")
+        choose(candidate)
+        SplitSlot.entries.forEach {
+            assertTrue(mirroredPane(it).suggestions.isEmpty())
+            assertTrue(mirroredPane(it).buildZeroQueryDisplayTextsForTesting().isEmpty())
+        }
+        verify(replacement, never()).commitText(any(CharSequence::class.java), anyInt())
     }
 
 }

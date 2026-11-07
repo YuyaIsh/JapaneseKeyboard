@@ -1089,6 +1089,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             toggle = inlineSuggestionToggleForCandidateStrip(),
         )
         suggestionAdapter?.submitContent(content, inlineSuggestionState)
+        // Equal panel data can still belong to a new editor/request. Refresh Fold guards
+        // even when the shared adapter has no DiffUtil notification to forward.
+        scheduleSplitCandidates()
         if (floatingCandidateSurfaceActive || isKeyboardFloatingMode != true) {
             mainLayoutBinding?.let { binding ->
                 setMainSuggestionColumn(binding)
@@ -2789,16 +2792,19 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         val fold = activeFoldLayout != null
         val input = inputString.value
         val tail = stringInTail.get()
+        val hasComposition = input.isNotEmpty() || tail.isNotEmpty() || isHenkan.get()
         val language = currentInputModeForSession
         val request = candidateRefreshCoordinator.requests.value
         val mutation = editorMutationRevision.current()
         val zenzTarget = bunsetsuConversionSession?.let { currentBunsetsuZenzSlotTargetOrNull(it, it.focusedIndex) }
         splitInputs.values.forEach { state ->
-            if (!fold || foldPaneSharesComposition(state)) {
-                state.adapter.mirrorSplitContentFrom(source, consumeCandidateClicks = fold, candidateActionSession = request to mutation,
+            if (!fold || foldPaneSharesComposition(state) || (!hasComposition && state.slot == activeSplitSlot)) {
+                state.adapter.mirrorSplitContentFrom(source, consumeCandidateClicks = fold, hasComposition = hasComposition,
+                    candidateActionSession = request to mutation,
                     isCandidateEnabled = { !fold || !it.isZenzLiveLoadingSlot(zenzTarget?.segmentReading ?: inputString.value, zenzTarget) }) {
                     splitInputs[state.slot] === state && (!fold ||
-                        (activeFoldLayout != null && foldPaneSharesComposition(state) &&
+                        (activeFoldLayout != null &&
+                            (if (hasComposition) foldPaneSharesComposition(state) else state.slot == activeSplitSlot && !isHenkan.get()) &&
                             currentInputModeForSession == language && inputString.value == input &&
                             stringInTail.get() == tail && candidateRefreshCoordinator.isCurrent(request) &&
                             editorMutationRevision.isCurrent(mutation)))
