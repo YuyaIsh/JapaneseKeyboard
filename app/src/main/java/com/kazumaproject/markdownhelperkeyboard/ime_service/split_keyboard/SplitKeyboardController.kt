@@ -123,8 +123,15 @@ internal class SplitKeyboardController(
                 val candidates = panes[slot]?.candidates
                 keyboardGesture = candidates?.isVisible != true || event.y >= candidates.height
             }
-            // Floating panes share candidates; Fold candidates belong to their own pane.
-            if (!keyboardGesture && foldLayout == null) return super.dispatchTouchEvent(event)
+            // Candidate commands use the shared editor owner. Activating a different
+            // layout here can finalize custom toggles or change conversion behavior.
+            if (!keyboardGesture) {
+                return try { super.dispatchTouchEvent(event) } finally {
+                    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                        foldGesture = false
+                    }
+                }
+            }
             onActivate(slot)
             if (event.actionMasked == MotionEvent.ACTION_DOWN) onGestureChanged(slot, true)
             return try { super.dispatchTouchEvent(event) } finally {

@@ -70,9 +70,10 @@ class FoldKeyboardLayoutTest {
                     assertEquals(View.VISIBLE, list.visibility)
                     assertEquals(110, list.height)
                     assertTrue(bodies.getValue(slot).height > 0)
+                    activated = null
                     val event = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 5f, 5f, 0)
                     try { pane.dispatchTouchEvent(event) } finally { event.recycle() }
-                    assertEquals(slot, activated)
+                    assertNull("Candidate strips must not change the shared editor owner", activated)
                 }
                 if (layout == FoldKeyboardLayout.SPLIT) {
                     assertEquals(host.getChildAt(0).right, host.getChildAt(1).left)
@@ -203,6 +204,103 @@ class FoldKeyboardLayoutTest {
             assertEquals(58, bindings.getValue(SplitSlot.MAIN).suggestionRecyclerView.height)
         } finally {
             controller.stop()
+            activity.finish()
+        }
+    }
+
+    @Test fun eitherCandidateStripReceivesRealTapsAndLongPressesWithoutActivatingItsKeyboard() {
+        val activityController = Robolectric.buildActivity(Activity::class.java).setup().visible()
+        val activity = activityController.get()
+        val context = android.view.ContextThemeWrapper(activity,
+            com.kazumaproject.markdownhelperkeyboard.R.style.Theme_MarkdownKeyboard)
+        val host = FoldKeyboardDockHost(context)
+        activity.setContentView(host)
+        var active = SplitSlot.MAIN
+        var activations = 0
+        val controller = SplitKeyboardController(context, host, { active = it; activations++ }, {}, {},
+            foldLayout = FoldKeyboardLayout.SPLIT, foldBodyHeight = { 180 }, foldCandidateHeight = { 58 })
+        val source = com.kazumaproject.markdownhelperkeyboard.ime_service.adapters.SuggestionAdapter(java.util.concurrent.Executor { it.run() })
+        var clicks = 0
+        var longPresses = 0
+        source.setOnItemClickListener { _, _ -> clicks++ }
+        source.setOnItemLongClickListener { _, _ -> longPresses++ }
+        source.suggestions = (0 until 30).map {
+            com.kazumaproject.markdownhelperkeyboard.converter.candidate.Candidate(
+                "変換候補$it", 1.toByte(), 2.toUByte(), 0, "へんかん")
+        }
+        val lists = SplitSlot.entries.associateWith {
+            RecyclerView(context).apply {
+                layoutManager = androidx.recyclerview.widget.LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
+                itemAnimator = null
+                adapter = com.kazumaproject.markdownhelperkeyboard.ime_service.adapters.SuggestionAdapter(java.util.concurrent.Executor { it.run() }).apply {
+                    mirrorSplitContentFrom(source)
+                }
+            }
+        }
+        SplitSlot.entries.forEach { slot ->
+            controller.add(slot, object : View(context) {
+                override fun onTouchEvent(event: MotionEvent) = true
+            }, lists.getValue(slot), 240)
+        }
+        fun measure() {
+            host.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.AT_MOST))
+            host.layout(0, 0, 800, host.measuredHeight)
+        }
+        fun touch(slot: SplitSlot, action: Int, x: Float, y: Float, down: Long) {
+            val event = MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+            try { host.getChildAt(slot.ordinal).dispatchTouchEvent(event) } finally { event.recycle() }
+        }
+        val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        try {
+            controller.start()
+            looper.idle()
+            measure()
+            activityController.windowFocusChanged(true)
+            for (keyboard in SplitSlot.entries) {
+                val down = android.os.SystemClock.uptimeMillis()
+                touch(keyboard, MotionEvent.ACTION_DOWN, 30f, host.height - 20f, down)
+                touch(keyboard, MotionEvent.ACTION_UP, 30f, host.height - 20f, down)
+                assertEquals(keyboard, active)
+                val before = activations
+                for (strip in SplitSlot.entries) {
+                    val list = lists.getValue(strip)
+                    val holder = checkNotNull(list.findViewHolderForAdapterPosition(0))
+                    val item = holder.itemView
+                    val x = list.left + item.left + item.width / 2f
+                    val y = list.top + item.top + item.height / 2f
+                    val tapDown = android.os.SystemClock.uptimeMillis()
+                    touch(strip, MotionEvent.ACTION_DOWN, x, y, tapDown)
+                    touch(strip, MotionEvent.ACTION_UP, x, y, tapDown)
+                    // Let the preceding tap's delayed pressed-state cleanup finish before
+                    // holding the same view; otherwise it clears this new press mid-hold.
+                    looper.idleFor(java.time.Duration.ofMillis(android.view.ViewConfiguration.getPressedStateDuration().toLong()))
+                    assertTrue("Timed platform long presses require a focused test window", item.hasWindowFocus())
+                    val longDown = android.os.SystemClock.uptimeMillis()
+                    touch(strip, MotionEvent.ACTION_DOWN, x, y, longDown)
+                    looper.idleFor(java.time.Duration.ofMillis(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 100))
+                    touch(strip, MotionEvent.ACTION_UP, x, y, longDown)
+                    looper.idle()
+                    assertEquals(keyboard, active)
+                    assertEquals("Candidate gestures must not activate or finish a pane", before, activations)
+                }
+            }
+            assertEquals(4, clicks)
+            assertEquals(4, longPresses)
+            val left = lists.getValue(SplitSlot.MAIN)
+            val right = lists.getValue(SplitSlot.SUB)
+            left.scrollBy(500, 0)
+            val leftManager = left.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+            val rightManager = right.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+            assertTrue(leftManager.findFirstVisibleItemPosition() > 0)
+            assertEquals(0, rightManager.findFirstVisibleItemPosition())
+            val leftPosition = leftManager.findFirstVisibleItemPosition()
+            right.scrollBy(200, 0)
+            assertEquals(leftPosition, leftManager.findFirstVisibleItemPosition())
+        } finally {
+            controller.stop()
+            lists.values.forEach { (it.adapter as? com.kazumaproject.markdownhelperkeyboard.ime_service.adapters.SuggestionAdapter)?.release() }
+            source.release()
             activity.finish()
         }
     }

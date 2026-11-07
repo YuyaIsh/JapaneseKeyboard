@@ -1089,6 +1089,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             toggle = inlineSuggestionToggleForCandidateStrip(),
         )
         suggestionAdapter?.submitContent(content, inlineSuggestionState)
+        // Equal panel data can still belong to a new editor/request. Refresh Fold guards
+        // even when the shared adapter has no DiffUtil notification to forward.
+        scheduleSplitCandidates()
         if (floatingCandidateSurfaceActive || isKeyboardFloatingMode != true) {
             mainLayoutBinding?.let { binding ->
                 setMainSuggestionColumn(binding)
@@ -2524,14 +2527,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         _tenKeyQWERTYMode.value = state.mode
         refreshBaselineInputBehaviorForCurrentKeyboard("split input source")
         syncSplitPresentation()
-        if (activeFoldLayout != null) {
-            suggestionAdapter?.let { source ->
-                splitInputs.values.forEach { pane ->
-                    if (pane.slot == slot) pane.adapter.mirrorSplitContentFrom(source) { activeSplitSlot == slot && splitInputs[slot] === pane }
-                    else pane.adapter.submitContent(CandidateStripContent.Empty)
-                }
-            }
-        }
+        if (activeFoldLayout != null) refreshSplitCandidates()
         scheduleSplitCandidates()
     }
 
@@ -2599,7 +2595,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private fun foldPaneCandidateHeight(slot: SplitSlot): Int {
         val prefs = getKeyboardSizePreferences()
-        val hasComposition = slot == activeSplitSlot && (inputString.value.isNotEmpty() || stringInTail.get().isNotEmpty() || isHenkan.get())
+        val hasComposition = splitInputs[slot]?.let(::foldPaneSharesComposition) == true
         return dpToPx(if (hasComposition) prefs.candidateHeight else prefs.candidateEmptyHeight)
     }
 
@@ -2783,21 +2779,46 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         splitCandidateRefreshPosted = true
         mainHandler.post {
             splitCandidateRefreshPosted = false
-            val source = suggestionAdapter ?: return@post
-            splitInputs.values.forEach { state ->
-                if (activeFoldLayout == null || state.slot == activeSplitSlot) {
-                    state.adapter.mirrorSplitContentFrom(source) { splitInputs[state.slot] === state && (activeFoldLayout == null || state.slot == activeSplitSlot) }
-                } else {
-                    state.adapter.submitContent(CandidateStripContent.Empty)
-                }
-                val colors = resolveCandidatePanelColors()
-                state.adapter.setFloatingPanelColors(colors)
-                state.adapter.setCandidateTextColor(colors.text)
-                state.adapter.setShortcutIconColor(colors.icon)
-                state.adapter.setCandidateEmptyPopupColors(colors.background, colors.text)
-            }
-            splitController?.refresh()
+            refreshSplitCandidates()
         }
+    }
+
+    private fun foldPaneSharesComposition(state: SplitInputState): Boolean =
+        (inputString.value.isNotEmpty() || stringInTail.get().isNotEmpty() || isHenkan.get()) &&
+            (if (state.slot == activeSplitSlot) currentInputModeForSession else state.inputMode) == currentInputModeForSession
+
+    private fun refreshSplitCandidates() {
+        val source = suggestionAdapter ?: return
+        val fold = activeFoldLayout != null
+        val input = inputString.value
+        val tail = stringInTail.get()
+        val hasComposition = input.isNotEmpty() || tail.isNotEmpty() || isHenkan.get()
+        val language = currentInputModeForSession
+        val request = candidateRefreshCoordinator.requests.value
+        val mutation = editorMutationRevision.current()
+        val zenzTarget = bunsetsuConversionSession?.let { currentBunsetsuZenzSlotTargetOrNull(it, it.focusedIndex) }
+        splitInputs.values.forEach { state ->
+            if (!fold || foldPaneSharesComposition(state) || (!hasComposition && state.slot == activeSplitSlot)) {
+                state.adapter.mirrorSplitContentFrom(source, consumeCandidateClicks = fold, hasComposition = hasComposition,
+                    candidateActionSession = request to mutation,
+                    isCandidateEnabled = { !fold || !it.isZenzLiveLoadingSlot(zenzTarget?.segmentReading ?: inputString.value, zenzTarget) }) {
+                    splitInputs[state.slot] === state && (!fold ||
+                        (activeFoldLayout != null &&
+                            (if (hasComposition) foldPaneSharesComposition(state) else state.slot == activeSplitSlot && !isHenkan.get()) &&
+                            currentInputModeForSession == language && inputString.value == input &&
+                            stringInTail.get() == tail && candidateRefreshCoordinator.isCurrent(request) &&
+                            editorMutationRevision.isCurrent(mutation)))
+                }
+            } else {
+                state.adapter.submitContent(CandidateStripContent.Empty)
+            }
+            val colors = resolveCandidatePanelColors()
+            state.adapter.setFloatingPanelColors(colors)
+            state.adapter.setCandidateTextColor(colors.text)
+            state.adapter.setShortcutIconColor(colors.icon)
+            state.adapter.setCandidateEmptyPopupColors(colors.background, colors.text)
+        }
+        splitController?.refresh()
     }
 
     private fun updateFloatingClipboardItems(items: List<ClipboardItem>) {
