@@ -3627,6 +3627,12 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     private fun syncRuntimeInputPreferences() {
         assertMainThread("syncRuntimeInputPreferences")
 
+        // A view-only restart does not apply a new ImePreferencesSnapshot.
+        // Resolve its keyboard against the current settings, including picker changes.
+        keyboardOrder = appPreference.keyboard_order
+        enableShowLastShownKeyboardInRestart = appPreference.save_last_used_keyboard_enable_preference
+        lastSavedKeyboardPosition = appPreference.save_last_used_keyboard_position_preference
+
         val previousInlineSuggestionEnabled = inlineSuggestionEnabled
         applyInlineSuggestionEnabled(appPreference.inline_suggestion_enabled_preference)
         if (previousInlineSuggestionEnabled != inlineSuggestionEnabled) {
@@ -12298,6 +12304,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                         currentKeyboardOrder = position
                         if (enableShowLastShownKeyboardInRestart == true) {
                             appPreference.save_last_used_keyboard_position_preference = position
+                            lastSavedKeyboardPosition = position
                         }
 
                         val nextType = row.type
