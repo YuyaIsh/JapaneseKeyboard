@@ -27,8 +27,11 @@ class SplitKeyboardSettings(private val prefs: SharedPreferences) {
         return SplitKeyboardSelection(if (type == KeyboardType.SPLIT) KeyboardType.TENKEY else type,
             prefs.getString(customKey(slot), "").orEmpty())
     }
+    fun configuredSelection(slot: SplitSlot): SplitKeyboardSelection? =
+        if (prefs.contains(typeKey(slot))) selection(slot) else null
+
     fun foldSelection(slot: SplitSlot, regular: SplitKeyboardSelection): SplitKeyboardSelection =
-        if (prefs.contains(typeKey(slot))) selection(slot) else regular
+        configuredSelection(slot) ?: regular
 
     fun saveSelection(slot: SplitSlot, value: SplitKeyboardSelection) {
         require(value.type != KeyboardType.SPLIT)

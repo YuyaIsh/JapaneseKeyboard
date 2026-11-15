@@ -23,6 +23,7 @@ import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.ClipboardP
 import com.kazumaproject.markdownhelperkeyboard.short_cut.ShortcutType
 import com.kazumaproject.markdownhelperkeyboard.ime_service.candidate.CandidateRefreshCoordinator
 import com.kazumaproject.markdownhelperkeyboard.ime_service.models.CandidateShowFlag
+import com.kazumaproject.markdownhelperkeyboard.ime_service.state.InputTypeForIME
 import com.kazumaproject.markdownhelperkeyboard.ime_service.state.KeyboardType
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,7 +86,10 @@ class SplitKeyboardServiceSyncTest {
             mode == TenKeyQWERTYMode.TenKeyQWERTYRomaji)
         required.copyInto(args)
         args[args.lastIndex - 1] = -128 // first seven arguments supplied, all remaining arguments defaulted
-        inputs[slot] = constructor.newInstance(*args)
+        inputs[slot] = constructor.newInstance(*args).also { state ->
+            val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+            Reflect.setField(state, "configuredSelection", SplitKeyboardSettings(prefs).configuredSelection(slot))
+        }
     }
     private fun select(slot: SplitSlot, mode: TenKeyQWERTYMode) {
         Reflect.setField(service, "activeSplitSlot", slot)
@@ -422,6 +426,174 @@ class SplitKeyboardServiceSyncTest {
         assertEquals("pending", connection.editable.toString()) // no restored preedit to commit again
         assertEquals(-1, android.view.inputmethod.BaseInputConnection.getComposingSpanStart(checkNotNull(connection.editable)))
         assertEquals(before, prefs.all)
+    }
+
+    @Test fun foldReopenUsesChangedPaneSettingsInsteadOfPreviousSessionSelection() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        val regular = SplitKeyboardSelection(KeyboardType.TENKEY)
+        prefs.edit().putBoolean(SplitKeyboardSettings.FOLD_ENABLED, true)
+            .putString(SplitKeyboardSettings.FOLD_LAYOUT, "SPLIT").commit()
+        settings.saveSelection(SplitSlot.MAIN, regular)
+        settings.saveSelection(SplitSlot.SUB, SplitKeyboardSelection(KeyboardType.SUMIRE))
+        AppPreference.keyboard_order = listOf(KeyboardType.TENKEY)
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Sumire)
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "selection", SplitKeyboardSelection(KeyboardType.SUMIRE))
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Default)
+        service.onFinishInputView(false)
+        settings.saveSelection(SplitSlot.SUB, regular)
+        val resolved = Reflect.callInstanceMethod<SplitKeyboardSelection>(service, "resolveFoldKeyboardSelection",
+            ClassParameter.from(SplitSlot::class.java, SplitSlot.SUB),
+            ClassParameter.from(SplitKeyboardSelection::class.java, regular))
+        assertEquals(regular, settings.selection(SplitSlot.SUB))
+        assertEquals(regular, resolved)
+    }
+
+    @Test fun unchangedPaneSettingsPreserveIndependentSessionSelectionAndLanguage() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        val regular = SplitKeyboardSelection(KeyboardType.TENKEY)
+        val main = SplitKeyboardSelection(KeyboardType.SUMIRE)
+        settings.saveSelection(SplitSlot.MAIN, main)
+        settings.saveSelection(SplitSlot.SUB, SplitKeyboardSelection(KeyboardType.ROMAJI))
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        install(SplitSlot.MAIN, TenKeyQWERTYMode.Sumire)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        Reflect.setField(inputs.getValue(SplitSlot.MAIN), "selection", main)
+        // The layout key can change one pane for this editor without changing saved settings.
+        val sessionSelection = SplitKeyboardSelection(KeyboardType.QWERTY)
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "selection", sessionSelection)
+        select(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        call("rememberFoldInputSession")
+        val before = prefs.all.toMap()
+        fun resolve(slot: SplitSlot) = Reflect.callInstanceMethod<SplitKeyboardSelection>(service,
+            "resolveFoldKeyboardSelection", ClassParameter.from(SplitSlot::class.java, slot),
+            ClassParameter.from(SplitKeyboardSelection::class.java, regular))
+        assertEquals(main, resolve(SplitSlot.MAIN))
+        assertEquals(sessionSelection, resolve(SplitSlot.SUB))
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        val state = inputs.getValue(SplitSlot.SUB)
+        Reflect.setField(state, "selection", sessionSelection)
+        IMEService::class.java.declaredMethods.single { it.name == "restoreFoldInputSession" }.apply {
+            isAccessible = true
+            invoke(service, state)
+        }
+        assertEquals(InputMode.ModeEnglish, Reflect.getField<InputMode>(state, "inputMode"))
+        assertEquals(TenKeyQWERTYMode.TenKeyQWERTY, Reflect.getField<TenKeyQWERTYMode>(state, "mode"))
+        assertEquals(before, prefs.all)
+    }
+
+    @Test fun changedCustomIdOrRemovedPanePreferenceInvalidatesOnlyThatPanesSession() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        val original = SplitKeyboardSelection(KeyboardType.CUSTOM, "original")
+        SplitSlot.entries.forEach { settings.saveSelection(it, original) }
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        for (slot in SplitSlot.entries) {
+            install(slot, TenKeyQWERTYMode.Custom)
+            Reflect.setField(inputs.getValue(slot), "selection", original)
+        }
+        call("rememberFoldInputSession")
+        val replacement = SplitKeyboardSelection(KeyboardType.CUSTOM, "replacement")
+        settings.saveSelection(SplitSlot.SUB, replacement)
+        fun resolve(slot: SplitSlot) = Reflect.callInstanceMethod<SplitKeyboardSelection>(service,
+            "resolveFoldKeyboardSelection", ClassParameter.from(SplitSlot::class.java, slot),
+            ClassParameter.from(SplitKeyboardSelection::class.java, SplitKeyboardSelection(KeyboardType.ROMAJI)))
+        assertEquals(replacement, resolve(SplitSlot.SUB))
+        val saved = Reflect.getField<Map<SplitSlot, Any>>(service, "savedFoldInputs")
+        assertFalse(saved.containsKey(SplitSlot.SUB))
+        assertTrue(saved.containsKey(SplitSlot.MAIN))
+        assertEquals(original, resolve(SplitSlot.MAIN))
+        prefs.edit().remove(SplitKeyboardSettings.typeKey(SplitSlot.MAIN)).commit()
+        assertEquals(SplitKeyboardSelection(KeyboardType.ROMAJI), resolve(SplitSlot.MAIN))
+        assertTrue(saved.isEmpty())
+    }
+
+    @Test fun changedConfigurationDoesNotRestoreStaleModeEvenWhenSelectionMatches() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        val temporary = SplitKeyboardSelection(KeyboardType.TENKEY)
+        for (slot in SplitSlot.entries) {
+            settings.saveSelection(slot, SplitKeyboardSelection(KeyboardType.ROMAJI))
+            Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+            install(slot, TenKeyQWERTYMode.Number)
+            Reflect.setField(inputs.getValue(slot), "inputMode", InputMode.ModeNumber)
+        }
+        call("rememberFoldInputSession")
+        for (slot in SplitSlot.entries) {
+            settings.saveSelection(slot, temporary)
+            val selection = Reflect.callInstanceMethod<SplitKeyboardSelection>(service,
+                "resolveFoldKeyboardSelection", ClassParameter.from(SplitSlot::class.java, slot),
+                ClassParameter.from(SplitKeyboardSelection::class.java, temporary))
+            assertEquals(temporary, selection)
+            install(slot, TenKeyQWERTYMode.Default)
+            restorePane(slot)
+            assertEquals(TenKeyQWERTYMode.Default, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(slot), "mode"))
+            assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(slot), "inputMode"))
+        }
+    }
+
+    @Test fun unconfiguredFoldPanePreservesTemporaryChoiceWithoutSavingPreferences() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        install(SplitSlot.SUB, TenKeyQWERTYMode.TenKeyQWERTY)
+        val temporary = SplitKeyboardSelection(KeyboardType.QWERTY)
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "selection", temporary)
+        call("rememberFoldInputSession")
+        val before = prefs.all.toMap()
+        assertEquals(temporary, Reflect.callInstanceMethod<SplitKeyboardSelection>(service,
+            "resolveFoldKeyboardSelection", ClassParameter.from(SplitSlot::class.java, SplitSlot.SUB),
+            ClassParameter.from(SplitKeyboardSelection::class.java, SplitKeyboardSelection(KeyboardType.ROMAJI))))
+        install(SplitSlot.SUB, TenKeyQWERTYMode.Default)
+        Reflect.setField(inputs.getValue(SplitSlot.SUB), "selection", temporary)
+        restorePane(SplitSlot.SUB)
+        assertEquals(InputMode.ModeEnglish, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.SUB), "inputMode"))
+        assertEquals(before, prefs.all)
+        assertFalse(prefs.contains(SplitKeyboardSettings.typeKey(SplitSlot.SUB)))
+    }
+
+    private fun restorePane(slot: SplitSlot) {
+        IMEService::class.java.declaredMethods.single { it.name == "restoreFoldInputSession" }.apply {
+            isAccessible = true
+            invoke(service, inputs.getValue(slot))
+        }
+    }
+
+    @Test fun forcedNumberAndPasswordModesTakePriorityOverUnchangedFoldSession() {
+        val settings = SplitKeyboardSettings(androidx.preference.PreferenceManager.getDefaultSharedPreferences(context))
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        for (slot in SplitSlot.entries) {
+            settings.saveSelection(slot, SplitKeyboardSelection(KeyboardType.TENKEY))
+            install(slot, TenKeyQWERTYMode.Default)
+        }
+        call("rememberFoldInputSession")
+        val types = listOf(
+            InputTypeForIME.Number,
+            InputTypeForIME.TextPassword)
+        for (type in types) {
+            Reflect.setField(service, "currentInputType", type)
+            Reflect.setField(service, "switchQWERTYPassword", true)
+            for (slot in SplitSlot.entries) {
+                val number = type == types.first()
+                val mode = if (number) TenKeyQWERTYMode.Number else TenKeyQWERTYMode.TenKeyQWERTY
+                val inputMode = if (number) InputMode.ModeNumber else InputMode.ModeEnglish
+                install(slot, mode)
+                Reflect.setField(inputs.getValue(slot), "inputMode", inputMode)
+                restorePane(slot)
+                assertEquals(mode, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(slot), "mode"))
+                assertEquals(inputMode, Reflect.getField<InputMode>(inputs.getValue(slot), "inputMode"))
+            }
+        }
+        Reflect.setField(service, "switchQWERTYPassword", false)
+        for (slot in SplitSlot.entries) {
+            restorePane(slot)
+            assertEquals(TenKeyQWERTYMode.Default, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(slot), "mode"))
+            assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(slot), "inputMode"))
+        }
     }
 
     @Test fun endingFoldEditorSessionDropsOnlyItsInMemoryPaneChoices() {
