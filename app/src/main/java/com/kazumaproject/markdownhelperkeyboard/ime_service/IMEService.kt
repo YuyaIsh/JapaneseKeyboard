@@ -2377,7 +2377,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         var imageJob: Job? = null,
         var backgroundPlayer: ExoPlayer? = null,
         var backgroundVideoConfig: KeyboardBackgroundVideoConfig? = null,
-    )
+    ) {
+        var configuredSelection: SplitKeyboardSelection? = null
+    }
     // Choices live for the Android editor session; never retain composing text or Views here.
     private data class FoldPaneSession(
         val selection: SplitKeyboardSelection,
@@ -2390,6 +2392,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         val previousMode: TenKeyQWERTYMode?,
         val numberReturn: RestartInputModeQwertyReturnSource,
         val numberFromTenkey: Boolean,
+        val configuredSelection: SplitKeyboardSelection?,
     )
     private val savedFoldInputs = linkedMapOf<SplitSlot, FoldPaneSession>()
     private var savedFoldActiveSlot: SplitSlot? = null
@@ -2400,12 +2403,14 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         splitInputs.forEach { (slot, state) ->
             savedFoldInputs[slot] = FoldPaneSession(state.selection, state.mode, state.inputMode,
                 state.romaji, state.customMode, state.customRomaji, state.customDirect,
-                state.previousMode, state.numberReturn, state.numberFromTenkey)
+                state.previousMode, state.numberReturn, state.numberFromTenkey, state.configuredSelection)
         }
         savedFoldActiveSlot = activeSplitSlot
     }
 
     private fun restoreFoldInputSession(state: SplitInputState) {
+        if (currentInputType in numberTypes ||
+            (currentInputType in passwordTypesWithOutNumber && switchQWERTYPassword == true)) return
         val saved = savedFoldInputs[state.slot]?.takeIf { it.selection == state.selection } ?: return
         state.mode = saved.mode
         state.presentedMode = saved.mode
@@ -2417,6 +2422,16 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         state.previousMode = saved.previousMode
         state.numberReturn = saved.numberReturn
         state.numberFromTenkey = saved.numberFromTenkey
+    }
+
+    private fun resolveFoldKeyboardSelection(
+        slot: SplitSlot,
+        regular: SplitKeyboardSelection
+    ): SplitKeyboardSelection {
+        val configured = splitSettings.configuredSelection(slot)
+        // Same-editor pane choices survive hiding/folding, but must not override settings edits.
+        if (savedFoldInputs[slot]?.configuredSelection != configured) savedFoldInputs.remove(slot)
+        return savedFoldInputs[slot]?.selection ?: configured ?: regular
     }
 
     private fun clearFoldInputSession() {
@@ -2656,7 +2671,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 main.candidatesRowView.adapter = suggestionAdapterFull
                 controller.setCandidatesDetached(floatingCandidateSurfaceActive)
                 (foldLayout?.slots ?: SplitSlot.entries).forEach { slot ->
-                    val configured = if (foldLayout != null) savedFoldInputs[slot]?.selection ?: splitSettings.foldSelection(slot, SplitKeyboardSelection(
+                    val configured = if (foldLayout != null) resolveFoldKeyboardSelection(slot, SplitKeyboardSelection(
                         regularKeyboardType.takeUnless { it == KeyboardType.SPLIT }
                             ?: keyboardOrder.firstOrNull { it != KeyboardType.SPLIT } ?: KeyboardType.TENKEY,
                         currentCustomKeyboardStableIdCandidate() ?: layouts.firstOrNull()?.stableId.orEmpty()
@@ -2685,8 +2700,10 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                     }
                     val state = SplitInputState(slot, selection, binding, adapter, initialMode,
                         initialInputMode, selection.type == KeyboardType.ROMAJI && initialInputMode == InputMode.ModeJapanese,
-                        customMode = initialInputMode.toSumireKeyboardInputMode())
-                    if (foldLayout != null && !forcedNumber && !forcedPasswordQwerty) restoreFoldInputSession(state)
+                        customMode = initialInputMode.toSumireKeyboardInputMode()).also {
+                        it.configuredSelection = splitSettings.configuredSelection(slot)
+                    }
+                    if (foldLayout != null) restoreFoldInputSession(state)
                     splitInputs[slot] = state
                     activateSplitInput(slot)
                     configureFloatingTenKeyView(binding)
