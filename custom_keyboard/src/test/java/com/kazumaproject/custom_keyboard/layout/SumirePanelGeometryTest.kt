@@ -36,8 +36,14 @@ class SumirePanelGeometryTest {
         val geometry = SumirePanelGeometry(layout.columnUnitCount, layout.rowUnitCount,
             layout.items.map { it.placement },
             SumirePanels(SumirePanelSize(30, 60, 10), SumirePanelSize(45, 90, 40)))
-        assertEquals(PanelBounds(100, 120, 400, 300), geometry.panel(true, 1000, 300))
+        assertEquals(PanelBounds(47, 120, 347, 300), geometry.panel(true, 1000, 300))
         assertEquals(PanelBounds(510, 30, 960, 300), geometry.panel(false, 1000, 300))
+        val start = SumirePanelGeometry(layout.columnUnitCount, layout.rowUnitCount, layout.items.map { it.placement },
+            SumirePanels(SumirePanelSize(40, 100, 0), SumirePanelSize(40, 100, 0)))
+        val end = SumirePanelGeometry(layout.columnUnitCount, layout.rowUnitCount, layout.items.map { it.placement },
+            SumirePanels(SumirePanelSize(40, 100, 40), SumirePanelSize(40, 100, 40)))
+        assertTrue(start.panel(true, 1000, 300).left < end.panel(true, 1000, 300).left)
+        assertTrue(start.panel(false, 1000, 300).right > end.panel(false, 1000, 300).right)
         assertFalse(geometry.panel(true, 1000, 300).contains(500f, 200f))
         assertFalse(geometry.panel(false, 1000, 300).contains(500f, 200f))
     }

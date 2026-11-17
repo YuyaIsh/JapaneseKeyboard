@@ -25,8 +25,10 @@ class SumirePanelGeometry(
         val size = if (left) panels.left else panels.right
         // Reserve a center gap even when saved values would otherwise overlap.
         val panelWidth = width * size.width.coerceIn(10, 49) / 100
-        val offset = (width * size.offset.coerceAtLeast(0) / 100)
-            .coerceAtMost((width * 49 / 100 - panelWidth).coerceAtLeast(0))
+        // offset is a 0..40 travel percentage across the available half-panel travel,
+        // rather than a screen percentage. Every UI value therefore maps distinctly.
+        val maxTravel = (width * 49 / 100 - panelWidth).coerceAtLeast(0)
+        val offset = maxTravel * size.offset.coerceIn(0, 40) / 40
         val x = if (left) offset else width - offset - panelWidth
         val panelHeight = height * size.height.coerceIn(20, 100) / 100
         return PanelBounds(x, height - panelHeight, x + panelWidth, height)
