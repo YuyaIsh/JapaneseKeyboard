@@ -28,6 +28,29 @@ import com.kazumaproject.core.R as CoreR
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
+    private var hingePostureListener: android.hardware.SensorEventListener? = null
+
+    override fun onResume() {
+        super.onResume()
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = KeyboardLayoutState.observeHinge(this) {
+            runOnUiThread {
+                supportFragmentManager.fragments.forEach { fragment ->
+                    val fragments = fragment.childFragmentManager.fragments + fragment
+                    fragments.filterIsInstance<com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment>()
+                        .forEach { it.onFoldPostureChanged(KeyboardLayoutState.isUnfolded(resources.configuration)) }
+                }
+            }
+        }
+    }
+
+    override fun onPause() {
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = null
+        super.onPause()
+    }
+
+
     @Inject
     lateinit var appPreference: AppPreference
     private lateinit var binding: ActivityMainBinding

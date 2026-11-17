@@ -822,7 +822,7 @@ open class CommonPreferenceFragment : PreferenceFragmentCompat() {
 
         keyboardSizeLandscapePreference?.setOnPreferenceClickListener {
             navigateSafely(
-                R.id.keyboardSizeLandscapeFragment
+                R.id.keyboardSizeDirectInputFragment
             )
             true
         }
@@ -976,7 +976,7 @@ open class CommonPreferenceFragment : PreferenceFragmentCompat() {
 
         keyboardSettingPreference?.setOnPreferenceClickListener {
             navigateSafely(
-                R.id.keyboardSettingFragment
+                R.id.keyboardSizeDirectInputFragment
             )
             true
         }
