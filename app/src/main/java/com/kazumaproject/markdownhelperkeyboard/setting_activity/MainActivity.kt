@@ -8,6 +8,13 @@ import android.view.MenuItem
 import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.core.view.MenuProvider
 import androidx.navigation.NavController
 import androidx.navigation.NavOptions
@@ -28,6 +35,37 @@ import com.kazumaproject.core.R as CoreR
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
+
+    private var foldPostureJob: Job? = null
+
+    override fun onStart() {
+        super.onStart()
+        foldPostureJob?.cancel()
+        foldPostureJob = lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                WindowInfoTracker.getOrCreate(this@MainActivity)
+                    .windowLayoutInfo(this@MainActivity)
+                    .collect { info ->
+                        val feature = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+                        val unfolded = feature?.state == FoldingFeature.State.FLAT ||
+                            feature?.state == FoldingFeature.State.HALF_OPENED
+                        KeyboardLayoutState.publishPosture(unfolded) {
+                            supportFragmentManager.fragments.forEach { fragment ->
+                                (fragment.childFragmentManager.fragments + fragment)
+                                    .filterIsInstance<com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment>()
+                                    .forEach { it.onFoldPostureChanged(unfolded) }
+                            }
+                        }
+                    }
+            }
+        }
+    }
+
+    override fun onStop() {
+        foldPostureJob?.cancel()
+        foldPostureJob = null
+        super.onStop()
+    }
 
     @Inject
     lateinit var appPreference: AppPreference

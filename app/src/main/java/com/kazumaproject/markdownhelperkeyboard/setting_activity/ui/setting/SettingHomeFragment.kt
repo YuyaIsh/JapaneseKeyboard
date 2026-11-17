@@ -407,17 +407,8 @@ class SettingHomeFragment : Fragment() {
 
     private fun currentSummary(destination: SettingDestination): String {
         return when (destination.key) {
-            "keyboard_screen_preference" -> getString(
-                R.string.setting_home_keyboard_size_summary,
-                appPreference.keyboard_height ?: 220,
-                appPreference.keyboard_width ?: 100,
-            )
-
-            "keyboard_screen_landscape_preference" -> getString(
-                R.string.setting_home_keyboard_size_summary,
-                appPreference.keyboard_height_landscape ?: 220,
-                appPreference.keyboard_width_landscape ?: 100,
-            )
+            "keyboard_screen_preference", "keyboard_screen_landscape_preference" ->
+                getString(R.string.keyboard_screen_preference_summary)
 
             "candidate_view_height_setting_fragment_preference" ->
                 candidateHeightSummary(isLandscape = false)
