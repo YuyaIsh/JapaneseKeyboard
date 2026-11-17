@@ -8,6 +8,15 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.ArrayAdapter
+import android.widget.AdapterView
+import android.widget.TextView
+import android.widget.SeekBar
+import androidx.appcompat.widget.SwitchCompat
+import androidx.preference.PreferenceManager
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
@@ -29,6 +38,11 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     private var _binding: FragmentKeyboardSizeDirectInputBinding? = null
     private val binding get() = _binding!!
 
+    private var unfolded = false
+    private var postureSpinner: Spinner? = null
+    private lateinit var panelControls: LinearLayout
+    private val panelPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+
     private val preferenceAccessor: KeyboardSizePreferenceAccessor by lazy {
         KeyboardSizePreferenceAccessor(appPreference)
     }
@@ -45,9 +59,104 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        setupStateControls(savedInstanceState)
         setupMenu()
         setupSelectionGroups()
         setupButtons()
+        loadSelectedValues()
+    }
+
+    private fun setupStateControls(savedInstanceState: Bundle?) {
+        unfolded = savedInstanceState?.getBoolean("unfolded")
+            ?: KeyboardLayoutState.isUnfolded(resources.configuration)
+        val container = (binding.root as ViewGroup).getChildAt(0) as LinearLayout
+        val state = Spinner(requireContext()).apply {
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item,
+                arrayOf(getString(R.string.keyboard_size_folded), getString(R.string.keyboard_size_unfolded)))
+            setSelection(if (unfolded) 1 else 0)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    unfolded = position == 1
+                    loadSelectedValues()
+                }
+            }
+        }
+        postureSpinner = state
+        container.addView(state, 0)
+        panelControls = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        container.addView(panelControls)
+    }
+
+    private fun panelPrefix(): String = "sumire_panels_${if (unfolded) "unfolded" else "folded"}_${if (selectedOrientation() == KeyboardSizeOrientation.Landscape) "landscape" else "portrait"}"
+
+    private fun refreshPanelControls() {
+        panelControls.removeAllViews()
+        val prefix = panelPrefix()
+        fun toggle(suffix: String, label: Int, default: Boolean, onChange: (Boolean) -> Unit) {
+            panelControls.addView(SwitchCompat(requireContext()).apply {
+                text = getString(label)
+                isChecked = panelPreferences.getBoolean("${prefix}_$suffix", default)
+                setOnCheckedChangeListener { _, checked ->
+                    panelPreferences.edit().putBoolean("${prefix}_$suffix", checked).apply()
+                    onChange(checked)
+                    refreshPanelControls()
+                }
+            })
+        }
+        toggle("enabled", R.string.sumire_two_panel_mode, false) { }
+        if (!panelPreferences.getBoolean("${prefix}_enabled", false)) return
+        toggle("symmetric", R.string.sumire_panel_symmetry, true) { checked ->
+            if (checked) {
+                val editor = panelPreferences.edit()
+                listOf("width" to 40, "height" to 100, "offset" to 0).forEach { (field, default) ->
+                    editor.putInt("${prefix}_right_$field", panelPreferences.getInt("${prefix}_left_$field", default))
+                }
+                editor.apply()
+            }
+        }
+        for ((side, title) in listOf("left" to R.string.sumire_panel_left, "right" to R.string.sumire_panel_right)) {
+            panelControls.addView(TextView(requireContext()).apply { text = getString(title) })
+            for ((field, label, range) in listOf(
+                Triple("width", R.string.sumire_panel_width, 10..49),
+                Triple("height", R.string.sumire_panel_height, 20..100),
+                Triple("offset", R.string.sumire_panel_offset, 0..40))) {
+                val default = when (field) { "width" -> 40; "height" -> 100; else -> 0 }
+                val value = panelPreferences.getInt("${prefix}_${side}_$field", default).coerceIn(range)
+                val text = TextView(requireContext()).apply { text = getString(label, value) }
+                panelControls.addView(text)
+                panelControls.addView(SeekBar(requireContext()).apply {
+                    max = range.last - range.first
+                    progress = value - range.first
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+                        override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                            if (!fromUser) return
+                            val next = progress + range.first
+                            text.text = getString(label, next)
+                            val editor = panelPreferences.edit().putInt("${prefix}_${side}_$field", next)
+                            if (panelPreferences.getBoolean("${prefix}_symmetric", true)) {
+                                val other = if (side == "left") "right" else "left"
+                                editor.putInt("${prefix}_${other}_$field", next)
+                            }
+                            editor.apply()
+                        }
+                        override fun onStopTrackingTouch(seekBar: SeekBar) { refreshPanelControls() }
+                    })
+                })
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("unfolded", unfolded)
+    }
+
+    fun onFoldPostureChanged(isUnfolded: Boolean) {
+        if (!isAdded || !this::panelControls.isInitialized || unfolded == isUnfolded) return
+        unfolded = isUnfolded
+        postureSpinner?.setSelection(if (isUnfolded) 1 else 0)
         loadSelectedValues()
     }
 
@@ -97,7 +206,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
             saveSelectedValues()
         }
         binding.resetButton.setOnClickListener {
-            preferenceAccessor.reset(selectedOrientation(), selectedKeyboardType())
+            preferenceAccessor.reset(selectedOrientation(), selectedKeyboardType(), unfolded)
             loadSelectedValues()
             Toast.makeText(
                 requireContext(),
@@ -108,8 +217,9 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     }
 
     private fun loadSelectedValues() {
+        refreshPanelControls()
         clearErrors()
-        val values = preferenceAccessor.load(selectedOrientation(), selectedKeyboardType())
+        val values = preferenceAccessor.load(selectedOrientation(), selectedKeyboardType(), unfolded)
         binding.heightEditText.setText(values.heightDp.toString())
         binding.widthEditText.setText(values.widthPercent.toString())
         binding.bottomMarginEditText.setText(values.bottomMarginDp.toString())
@@ -127,7 +237,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
             return
         }
 
-        preferenceAccessor.save(selectedOrientation(), selectedKeyboardType(), values)
+        preferenceAccessor.save(selectedOrientation(), selectedKeyboardType(), values, unfolded)
         loadSelectedValues()
         Toast.makeText(requireContext(), R.string.saved, Toast.LENGTH_SHORT).show()
     }

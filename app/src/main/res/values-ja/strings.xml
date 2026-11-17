@@ -162,7 +162,7 @@
     <string name="keyboard_selection_summary">キーボードの追加、削除ができます</string>
     <string name="keyboard_selection_preference_title">キーボードの選択</string>
     <string name="category_title_keyboard">キーボード</string>
-    <string name="keyboard_screen_size_preference_title">位置とサイズの設定(縦画面)</string>
+    <string name="keyboard_screen_size_preference_title">サイズ変更</string>
     <string name="keyboard_screen_landscape_size_preference_title">位置とサイズの設定(横画面)</string>
     <string name="keyboard_screen_preference_summary">キーボードの位置とサイズの設定を変更できます</string>
     <string name="keyboard_corner_radius_dp_preference_title">キーボードの角丸半径</string>
@@ -627,7 +627,7 @@
     <string name="keyboard_floating_preference_title">フローティングキーボード</string>
     <string name="keyboard_floating_preference_summary">キーボードを移動可能なフローティング表示にします</string>
     <string name="reset_keyboard_size_button_text">設定をリセット</string>
-    <string name="keyboard_size_setting_fragment_title">キーボードのサイズ</string>
+    <string name="keyboard_size_setting_fragment_title">サイズ変更</string>
     <string name="keyboard_size_direct_input_title">キーボードサイズの数値入力</string>
     <string name="keyboard_size_direct_input_menu_title">数値入力</string>
     <string name="keyboard_size_direct_input_orientation_title">表示方向</string>
@@ -1820,4 +1820,14 @@
     <string name="candidate_action_promote">この変換を優先</string>
     <string name="candidate_action_register">辞書に登録</string>
     <string name="candidate_action_promote_learning_disabled">優先設定を保存しました。反映するには設定で学習辞書を有効にしてください。</string>
+
+    <string name="keyboard_size_folded">折りたたみ時</string>
+    <string name="keyboard_size_unfolded">展開時</string>
+    <string name="sumire_two_panel_mode">2面モード</string>
+    <string name="sumire_panel_symmetry">左右対称</string>
+    <string name="sumire_panel_left">左のキーグループ</string>
+    <string name="sumire_panel_right">右のキーグループ</string>
+    <string name="sumire_panel_width">幅: %1$d%%</string>
+    <string name="sumire_panel_height">高さ: %1$d%%</string>
+    <string name="sumire_panel_offset">端からの位置: %1$d%%</string>
 </resources>

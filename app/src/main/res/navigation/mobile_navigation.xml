@@ -398,7 +398,7 @@
     <fragment
         android:id="@+id/keyboardSizeDirectInputFragment"
         android:name="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment"
-        android:label="@string/keyboard_size_direct_input_title"
+        android:label="@string/keyboard_size_setting_fragment_title"
         tools:layout="@layout/fragment_keyboard_size_direct_input">
         <argument
             android:name="initialOrientation"

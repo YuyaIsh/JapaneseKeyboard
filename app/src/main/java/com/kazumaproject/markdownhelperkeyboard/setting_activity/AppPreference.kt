@@ -909,6 +909,25 @@ object AppPreference {
     private val TYPO_CORRECTION_JA_FLICK_OFFSET_SCORE_PREFERENCE =
         Pair("enable_typo_correction_japanese_flick_keyboard_offset_score_preference", 3000)
 
+    fun keyboardSizeInt(key: String, default: Int, unfolded: Boolean): Int =
+        preferences.getInt(KeyboardLayoutState.preferenceKey(key, unfolded), preferences.getInt(key, default))
+
+    fun saveKeyboardSizeInt(key: String, value: Int, unfolded: Boolean) {
+        preferences.edit().putInt(KeyboardLayoutState.preferenceKey(key, unfolded), value).apply()
+    }
+
+    fun saveKeyboardSizePosition(key: String, unfolded: Boolean) {
+        preferences.edit().putBoolean(KeyboardLayoutState.preferenceKey(key, unfolded), true).apply()
+    }
+
+    private fun sizeReadKey(key: String): String {
+        val expanded = KeyboardLayoutState.preferenceKey(key, KeyboardLayoutState.isUnfolded(appContext.resources.configuration))
+        return if (preferences.contains(expanded)) expanded else key
+    }
+
+    private fun sizeWriteKey(key: String): String =
+        KeyboardLayoutState.preferenceKey(key, KeyboardLayoutState.isUnfolded(appContext.resources.configuration))
+
     fun init(context: Context) {
         appContext = context.applicationContext
         isTabletDevice = context.resources.getBoolean(CoreR.bool.isTablet)
@@ -2298,133 +2317,133 @@ object AppPreference {
 
     var keyboard_height: Int?
         get() = preferences.getInt(
-            KEYBOARD_HEIGHT.first, KEYBOARD_HEIGHT.second
+            sizeReadKey(KEYBOARD_HEIGHT.first), KEYBOARD_HEIGHT.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_HEIGHT.first, value ?: 280)
+            it.putInt(sizeWriteKey(KEYBOARD_HEIGHT.first), value ?: 280)
         }
 
     var keyboard_width: Int?
         get() = preferences.getInt(
-            KEYBOARD_WIDTH.first, KEYBOARD_WIDTH.second
+            sizeReadKey(KEYBOARD_WIDTH.first), KEYBOARD_WIDTH.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_WIDTH.first, value ?: 100)
+            it.putInt(sizeWriteKey(KEYBOARD_WIDTH.first), value ?: 100)
         }
 
     var qwerty_keyboard_height: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_HEIGHT.first, QWERTY_KEYBOARD_HEIGHT.second
+            sizeReadKey(QWERTY_KEYBOARD_HEIGHT.first), QWERTY_KEYBOARD_HEIGHT.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_HEIGHT.first, value ?: 220)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_HEIGHT.first), value ?: 220)
         }
 
     var qwerty_keyboard_width: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_WIDTH.first, QWERTY_KEYBOARD_WIDTH.second
+            sizeReadKey(QWERTY_KEYBOARD_WIDTH.first), QWERTY_KEYBOARD_WIDTH.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_WIDTH.first, value ?: 100)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_WIDTH.first), value ?: 100)
         }
 
     var qwerty_keyboard_vertical_margin_bottom: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM.first,
+            sizeReadKey(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM.first),
             QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM.first, value ?: 0)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM.first), value ?: 0)
         }
 
     var keyboard_position: Boolean?
-        get() = preferences.getBoolean(KEYBOARD_POSITION.first, KEYBOARD_POSITION.second)
+        get() = preferences.getBoolean(sizeReadKey(KEYBOARD_POSITION.first), KEYBOARD_POSITION.second)
         set(value) = preferences.edit {
-            it.putBoolean(KEYBOARD_POSITION.first, value ?: true)
+            it.putBoolean(sizeWriteKey(KEYBOARD_POSITION.first), value ?: true)
         }
 
     var qwerty_keyboard_position: Boolean?
         get() = preferences.getBoolean(
-            QWERTY_KEYBOARD_POSITION.first,
+            sizeReadKey(QWERTY_KEYBOARD_POSITION.first),
             QWERTY_KEYBOARD_POSITION.second
         )
         set(value) = preferences.edit {
-            it.putBoolean(QWERTY_KEYBOARD_POSITION.first, value ?: true)
+            it.putBoolean(sizeWriteKey(QWERTY_KEYBOARD_POSITION.first), value ?: true)
         }
 
     var keyboard_vertical_margin_bottom: Int?
         get() = preferences.getInt(
-            KEYBOARD_VERTICAL_MARGIN_BOTTOM.first, KEYBOARD_VERTICAL_MARGIN_BOTTOM.second
+            sizeReadKey(KEYBOARD_VERTICAL_MARGIN_BOTTOM.first), KEYBOARD_VERTICAL_MARGIN_BOTTOM.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_VERTICAL_MARGIN_BOTTOM.first, value ?: 0)
+            it.putInt(sizeWriteKey(KEYBOARD_VERTICAL_MARGIN_BOTTOM.first), value ?: 0)
         }
 
     var keyboard_height_landscape: Int?
         get() = preferences.getInt(
-            KEYBOARD_HEIGHT_LANDSCAPE.first, KEYBOARD_HEIGHT_LANDSCAPE.second
+            sizeReadKey(KEYBOARD_HEIGHT_LANDSCAPE.first), KEYBOARD_HEIGHT_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_HEIGHT_LANDSCAPE.first, value ?: 220)
+            it.putInt(sizeWriteKey(KEYBOARD_HEIGHT_LANDSCAPE.first), value ?: 220)
         }
 
     var keyboard_width_landscape: Int?
         get() = preferences.getInt(
-            KEYBOARD_WIDTH_LANDSCAPE.first, KEYBOARD_WIDTH_LANDSCAPE.second
+            sizeReadKey(KEYBOARD_WIDTH_LANDSCAPE.first), KEYBOARD_WIDTH_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_WIDTH_LANDSCAPE.first, value ?: 100)
+            it.putInt(sizeWriteKey(KEYBOARD_WIDTH_LANDSCAPE.first), value ?: 100)
         }
 
     var keyboard_position_landscape: Boolean?
         get() = preferences.getBoolean(
-            KEYBOARD_POSITION_LANDSCAPE.first, KEYBOARD_POSITION_LANDSCAPE.second
+            sizeReadKey(KEYBOARD_POSITION_LANDSCAPE.first), KEYBOARD_POSITION_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putBoolean(KEYBOARD_POSITION_LANDSCAPE.first, value ?: true)
+            it.putBoolean(sizeWriteKey(KEYBOARD_POSITION_LANDSCAPE.first), value ?: true)
         }
 
     var keyboard_vertical_margin_bottom_landscape: Int?
         get() = preferences.getInt(
-            KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first,
+            sizeReadKey(KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first),
             KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first, value ?: 0)
+            it.putInt(sizeWriteKey(KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first), value ?: 0)
         }
 
     var qwerty_keyboard_height_landscape: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.first, QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.second
+            sizeReadKey(QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.first), QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.first, value ?: 220)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_HEIGHT_LANDSCAPE.first), value ?: 220)
         }
 
     var qwerty_keyboard_width_landscape: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_WIDTH_LANDSCAPE.first, QWERTY_KEYBOARD_WIDTH_LANDSCAPE.second
+            sizeReadKey(QWERTY_KEYBOARD_WIDTH_LANDSCAPE.first), QWERTY_KEYBOARD_WIDTH_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_WIDTH_LANDSCAPE.first, value ?: 100)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_WIDTH_LANDSCAPE.first), value ?: 100)
         }
 
     var qwerty_keyboard_vertical_margin_bottom_landscape: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first,
+            sizeReadKey(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first),
             QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putInt(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first, value ?: 0)
+            it.putInt(sizeWriteKey(QWERTY_KEYBOARD_VERTICAL_MARGIN_BOTTOM_LANDSCAPE.first), value ?: 0)
         }
 
     var qwerty_keyboard_position_landscape: Boolean?
         get() = preferences.getBoolean(
-            QWERTY_KEYBOARD_POSITION_LANDSCAPE.first,
+            sizeReadKey(QWERTY_KEYBOARD_POSITION_LANDSCAPE.first),
             QWERTY_KEYBOARD_POSITION_LANDSCAPE.second
         )
         set(value) = preferences.edit {
-            it.putBoolean(QWERTY_KEYBOARD_POSITION_LANDSCAPE.first, value ?: true)
+            it.putBoolean(sizeWriteKey(QWERTY_KEYBOARD_POSITION_LANDSCAPE.first), value ?: true)
         }
 
     var candidate_view_height_dp_landscape: Int?
@@ -4136,76 +4155,76 @@ object AppPreference {
 
 
     var keyboard_margin_start_dp: Int?
-        get() = preferences.getInt(KEYBOARD_MARGIN_START_DP.first, KEYBOARD_MARGIN_START_DP.second)
-        set(value) = preferences.edit { it.putInt(KEYBOARD_MARGIN_START_DP.first, value ?: 0) }
+        get() = preferences.getInt(sizeReadKey(KEYBOARD_MARGIN_START_DP.first), KEYBOARD_MARGIN_START_DP.second)
+        set(value) = preferences.edit { it.putInt(sizeWriteKey(KEYBOARD_MARGIN_START_DP.first), value ?: 0) }
 
     var keyboard_margin_end_dp: Int?
-        get() = preferences.getInt(KEYBOARD_MARGIN_END_DP.first, KEYBOARD_MARGIN_END_DP.second)
-        set(value) = preferences.edit { it.putInt(KEYBOARD_MARGIN_END_DP.first, value ?: 0) }
+        get() = preferences.getInt(sizeReadKey(KEYBOARD_MARGIN_END_DP.first), KEYBOARD_MARGIN_END_DP.second)
+        set(value) = preferences.edit { it.putInt(sizeWriteKey(KEYBOARD_MARGIN_END_DP.first), value ?: 0) }
 
     var qwerty_keyboard_margin_start_dp: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_MARGIN_START_DP.first,
+            sizeReadKey(QWERTY_KEYBOARD_MARGIN_START_DP.first),
             QWERTY_KEYBOARD_MARGIN_START_DP.second
         )
         set(value) = preferences.edit {
             it.putInt(
-                QWERTY_KEYBOARD_MARGIN_START_DP.first,
+                sizeWriteKey(QWERTY_KEYBOARD_MARGIN_START_DP.first),
                 value ?: 0
             )
         }
 
     var qwerty_keyboard_margin_end_dp: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_MARGIN_END_DP.first,
+            sizeReadKey(QWERTY_KEYBOARD_MARGIN_END_DP.first),
             QWERTY_KEYBOARD_MARGIN_END_DP.second
         )
-        set(value) = preferences.edit { it.putInt(QWERTY_KEYBOARD_MARGIN_END_DP.first, value ?: 0) }
+        set(value) = preferences.edit { it.putInt(sizeWriteKey(QWERTY_KEYBOARD_MARGIN_END_DP.first), value ?: 0) }
 
     var keyboard_margin_start_dp_landscape: Int?
         get() = preferences.getInt(
-            KEYBOARD_MARGIN_START_DP_LANDSCAPE.first,
+            sizeReadKey(KEYBOARD_MARGIN_START_DP_LANDSCAPE.first),
             KEYBOARD_MARGIN_START_DP_LANDSCAPE.second
         )
         set(value) = preferences.edit {
             it.putInt(
-                KEYBOARD_MARGIN_START_DP_LANDSCAPE.first,
+                sizeWriteKey(KEYBOARD_MARGIN_START_DP_LANDSCAPE.first),
                 value ?: 0
             )
         }
 
     var keyboard_margin_end_dp_landscape: Int?
         get() = preferences.getInt(
-            KEYBOARD_MARGIN_END_DP_LANDSCAPE.first,
+            sizeReadKey(KEYBOARD_MARGIN_END_DP_LANDSCAPE.first),
             KEYBOARD_MARGIN_END_DP_LANDSCAPE.second
         )
         set(value) = preferences.edit {
             it.putInt(
-                KEYBOARD_MARGIN_END_DP_LANDSCAPE.first,
+                sizeWriteKey(KEYBOARD_MARGIN_END_DP_LANDSCAPE.first),
                 value ?: 0
             )
         }
 
     var qwerty_keyboard_margin_start_dp_landscape: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_MARGIN_START_DP_LANDSCAPE.first,
+            sizeReadKey(QWERTY_KEYBOARD_MARGIN_START_DP_LANDSCAPE.first),
             QWERTY_KEYBOARD_MARGIN_START_DP_LANDSCAPE.second
         )
         set(value) = preferences.edit {
             it.putInt(
-                QWERTY_KEYBOARD_MARGIN_START_DP_LANDSCAPE.first,
+                sizeWriteKey(QWERTY_KEYBOARD_MARGIN_START_DP_LANDSCAPE.first),
                 value ?: 0
             )
         }
 
     var qwerty_keyboard_margin_end_dp_landscape: Int?
         get() = preferences.getInt(
-            QWERTY_KEYBOARD_MARGIN_END_DP_LANDSCAPE.first,
+            sizeReadKey(QWERTY_KEYBOARD_MARGIN_END_DP_LANDSCAPE.first),
             QWERTY_KEYBOARD_MARGIN_END_DP_LANDSCAPE.second
         )
         set(value) = preferences.edit {
             it.putInt(
-                QWERTY_KEYBOARD_MARGIN_END_DP_LANDSCAPE.first,
+                sizeWriteKey(QWERTY_KEYBOARD_MARGIN_END_DP_LANDSCAPE.first),
                 value ?: 0
             )
         }

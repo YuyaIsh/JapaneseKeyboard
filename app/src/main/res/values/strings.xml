@@ -162,7 +162,7 @@
     <string name="keyboard_selection_summary">You can add or remove keyboards</string>
     <string name="keyboard_selection_preference_title">Keyboard Selection</string>
     <string name="category_title_keyboard">Keyboard</string>
-    <string name="keyboard_screen_size_preference_title">Position and Size</string>
+    <string name="keyboard_screen_size_preference_title">Resize</string>
     <string name="keyboard_screen_preference_summary">Adjust keyboard position and size</string>
     <string name="keyboard_corner_radius_dp_preference_title">Keyboard corner radius</string>
     <string name="keyboard_corner_radius_dp_preference_summary">Adjust the corner radius of the keyboard background.</string>
@@ -669,7 +669,7 @@
     <string name="keyboard_floating_preference_title">Floating keyboard</string>
     <string name="keyboard_floating_preference_summary">Show the keyboard as a movable floating keyboard</string>
     <string name="reset_keyboard_size_button_text">Reset Setting</string>
-    <string name="keyboard_size_setting_fragment_title">Keyboard Size</string>
+    <string name="keyboard_size_setting_fragment_title">Resize</string>
     <string name="keyboard_size_direct_input_title">Keyboard Size Direct Input</string>
     <string name="keyboard_size_direct_input_menu_title">Direct Input</string>
     <string name="keyboard_size_direct_input_orientation_title">Orientation</string>
@@ -1822,4 +1822,14 @@
     <string name="candidate_action_promote">Prefer this conversion</string>
     <string name="candidate_action_register">Add to dictionary</string>
     <string name="candidate_action_promote_learning_disabled">Preference saved. Enable the learning dictionary in settings to use it.</string>
+
+    <string name="keyboard_size_folded">Folded / compact</string>
+    <string name="keyboard_size_unfolded">Unfolded / expanded</string>
+    <string name="sumire_two_panel_mode">Sumire two-panel mode</string>
+    <string name="sumire_panel_symmetry">Left-right symmetry</string>
+    <string name="sumire_panel_left">Left key group</string>
+    <string name="sumire_panel_right">Right key group</string>
+    <string name="sumire_panel_width">Width: %1$d%%</string>
+    <string name="sumire_panel_height">Height: %1$d%%</string>
+    <string name="sumire_panel_offset">Edge offset: %1$d%%</string>
 </resources>

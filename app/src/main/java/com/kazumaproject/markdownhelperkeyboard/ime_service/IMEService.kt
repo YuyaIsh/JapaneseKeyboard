@@ -448,6 +448,7 @@ import com.google.android.material.R as MaterialR
 class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     ClipboardHistoryToggleListener, InputManager.InputDeviceListener {
 
+
     private sealed class CandidateLongPressAction {
         object Promote : CandidateLongPressAction()
         object Register : CandidateLongPressAction()
@@ -9870,6 +9871,12 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             resolver = SumireSpecialKeyActionResolver(sumireSpecialKeyActionOverrides)::resolve,
             layoutType = layoutType,
             inputMode = customKeyboardMode.name
+        )
+        flickView.setSumirePanels(
+            com.kazumaproject.markdownhelperkeyboard.ime_service.sumire.SumirePanelSettings.load(
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this), resources.configuration,
+                foldMonitor?.expanded ?: FoldKeyboardMonitor.isExpanded(this)
+            )
         )
         flickView.setKeyboard(createSumireKeyboardLayout(), KeyHitTestMode.NEAREST_KEY)
     }

@@ -20,6 +20,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.GridLayout
@@ -90,6 +91,8 @@ import com.kazumaproject.custom_keyboard.data.toCircularFlickKeyMaps
 import com.kazumaproject.custom_keyboard.data.toLegacyFlickDirection
 import com.kazumaproject.custom_keyboard.data.toSumireSpecialKeyDirectionOrNull
 import com.kazumaproject.custom_keyboard.layout.SegmentedBackgroundDrawable
+import com.kazumaproject.custom_keyboard.layout.SumirePanels
+import com.kazumaproject.custom_keyboard.layout.SumirePanelGeometry
 import com.kazumaproject.core.domain.flick.FlickTextPreviewEmitter
 import com.kazumaproject.core.domain.flick.FlickTextPreviewListener
 import com.kazumaproject.core.domain.flick.FlickTextSelection
@@ -100,6 +103,63 @@ import kotlin.math.roundToInt
 class FlickKeyboardView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : GridLayout(context, attrs, defStyleAttr) {
+
+    private var sumirePanels: SumirePanels? = null
+
+    fun setSumirePanels(panels: SumirePanels?) {
+        if (sumirePanels == panels) return
+        cancelTrackedTouchState()
+        sumirePanels = panels
+        requestLayout()
+    }
+
+    private fun panelGeometry(): SumirePanelGeometry? {
+        val panels = sumirePanels ?: return null
+        val layout = currentLayout ?: return null
+        return SumirePanelGeometry(columnCount, rowCount, layout.items.map { it.placement }, panels)
+            .takeIf { it.boundary != null }
+    }
+
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        val geometry = panelGeometry()
+        if (geometry == null) {
+            super.onMeasure(widthSpec, heightSpec)
+            return
+        }
+        // Bypass GridLayout's row/column allocation entirely in panel mode. It would
+        // measure children against the unsplit grid before onLayout moves them.
+        setMeasuredDimension(
+            getDefaultSize(suggestedMinimumWidth, widthSpec),
+            getDefaultSize(suggestedMinimumHeight, heightSpec)
+        )
+        val items = currentLayout?.items ?: return
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            val bounds = geometry.cell(items[i].placement, measuredWidth, measuredHeight)
+            val margins = child.layoutParams as ViewGroup.MarginLayoutParams
+            child.measure(
+                MeasureSpec.makeMeasureSpec((bounds.right - bounds.left - margins.leftMargin - margins.rightMargin).coerceAtLeast(0), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec((bounds.bottom - bounds.top - margins.topMargin - margins.bottomMargin).coerceAtLeast(0), MeasureSpec.EXACTLY)
+            )
+        }
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val geometry = panelGeometry()
+        if (geometry == null) {
+            super.onLayout(changed, left, top, right, bottom)
+            return
+        }
+        val items = currentLayout?.items ?: return
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            val bounds = geometry.cell(items[i].placement, width, height)
+            val margins = child.layoutParams as ViewGroup.MarginLayoutParams
+            val x = bounds.left + margins.leftMargin
+            val y = bounds.top + margins.topMargin
+            child.layout(x, y, x + child.measuredWidth, y + child.measuredHeight)
+        }
+    }
 
     interface OnKeyboardActionListener {
         fun onPress(action: KeyAction)
@@ -593,6 +653,7 @@ class FlickKeyboardView @JvmOverloads constructor(
             doubleTapActionDispatcher.cancel()
         }
         keyHitTestMode = hitTestMode
+        if (hitTestMode != KeyHitTestMode.NEAREST_KEY) setSumirePanels(null)
         setKeyboard(layout, forceRebuild = false)
     }
 
@@ -2959,16 +3020,34 @@ class FlickKeyboardView @JvmOverloads constructor(
             displayY < location[1] || displayY >= location[1] + height * surfaceScaleY
         ) return null
 
+        val geometry = panelGeometry()
+        val localX = (displayX - location[0]) / surfaceScaleX
+        val localY = (displayY - location[1]) / surfaceScaleY
+        val activeLeft = geometry?.let {
+            when {
+                it.panel(true, width, height).contains(localX, localY) -> true
+                it.panel(false, width, height).contains(localX, localY) -> false
+                else -> return null // The center gap and outer offsets are not keys.
+            }
+        }
         var nearest: MotionTarget? = null
         var nearestDistance = Float.POSITIVE_INFINITY
         for (info in keyInfos) {
+            if (activeLeft != null && geometry != null) {
+                val placement = currentLayout!!.items[info.index].placement
+                if ((placement.columnUnits < geometry.boundary!!) != activeLeft) continue
+            }
             val key = info.view
             if (key.visibility != View.VISIBLE || !key.isEnabled || key.width <= 0 || key.height <= 0) {
                 continue
             }
-            key.getLocationOnScreen(location)
-            val left = location[0].toFloat()
-            val top = location[1].toFloat()
+            // Derive the child's display origin from this surface's current screen origin
+            // and the child's laid-out local position. This is equivalent to
+            // getLocationOnScreen for attached views and deterministic for unattached views.
+            key.getLocationInWindow(location)
+            getLocationOnScreen(location)
+            val left = (location[0] + key.left * surfaceScaleX).toFloat()
+            val top = (location[1] + key.top * surfaceScaleY).toFloat()
             val (sx, sy) = key.displayScale()
             val screenWidth = key.width * sx
             val screenHeight = key.height * sy

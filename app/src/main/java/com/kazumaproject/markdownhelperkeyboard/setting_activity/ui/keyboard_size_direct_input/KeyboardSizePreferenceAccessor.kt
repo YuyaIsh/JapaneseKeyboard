@@ -24,144 +24,30 @@ enum class KeyboardSizeKeyboardType {
 class KeyboardSizePreferenceAccessor(
     private val appPreference: AppPreference,
 ) {
-    fun load(
-        orientation: KeyboardSizeOrientation,
-        keyboardType: KeyboardSizeKeyboardType,
-    ): KeyboardSizeValues {
-        return when (orientation) {
-            KeyboardSizeOrientation.Portrait -> loadPortrait(keyboardType)
-            KeyboardSizeOrientation.Landscape -> loadLandscape(keyboardType)
+    fun load(orientation: KeyboardSizeOrientation, keyboardType: KeyboardSizeKeyboardType, unfolded: Boolean = false): KeyboardSizeValues {
+        fun read(field: String, default: Int) = appPreference.keyboardSizeInt(key(orientation, keyboardType, field), default, unfolded)
+        return KeyboardSizeValues(read("height", DefaultHeightDp), read("width", DefaultWidthPercent),
+            read("vertical_margin_bottom", 0), read("margin_start_dp", 0), read("margin_end_dp", 0))
+    }
+
+    fun save(orientation: KeyboardSizeOrientation, keyboardType: KeyboardSizeKeyboardType, values: KeyboardSizeValues, unfolded: Boolean = false) {
+        val safe = normalize(values)
+        listOf("height" to safe.heightDp, "width" to safe.widthPercent,
+            "vertical_margin_bottom" to safe.bottomMarginDp, "margin_start_dp" to safe.marginStartDp,
+            "margin_end_dp" to safe.marginEndDp).forEach { (field, value) ->
+            appPreference.saveKeyboardSizeInt(key(orientation, keyboardType, field), value, unfolded)
         }
     }
 
-    fun save(
-        orientation: KeyboardSizeOrientation,
-        keyboardType: KeyboardSizeKeyboardType,
-        values: KeyboardSizeValues,
-    ) {
-        val normalized = normalize(values)
-        when (orientation) {
-            KeyboardSizeOrientation.Portrait -> savePortrait(keyboardType, normalized)
-            KeyboardSizeOrientation.Landscape -> saveLandscape(keyboardType, normalized)
-        }
+    fun reset(orientation: KeyboardSizeOrientation, keyboardType: KeyboardSizeKeyboardType, unfolded: Boolean = false) {
+        save(orientation, keyboardType, DefaultValues, unfolded)
+        appPreference.saveKeyboardSizePosition(key(orientation, keyboardType, "position"), unfolded)
     }
 
-    fun reset(
-        orientation: KeyboardSizeOrientation,
-        keyboardType: KeyboardSizeKeyboardType,
-    ) {
-        save(orientation, keyboardType, DefaultValues)
-        when (orientation) {
-            KeyboardSizeOrientation.Portrait -> {
-                when (keyboardType) {
-                    KeyboardSizeKeyboardType.TenKey -> appPreference.keyboard_position = true
-                    KeyboardSizeKeyboardType.Qwerty -> appPreference.qwerty_keyboard_position = true
-                }
-            }
-
-            KeyboardSizeOrientation.Landscape -> {
-                when (keyboardType) {
-                    KeyboardSizeKeyboardType.TenKey -> appPreference.keyboard_position_landscape = true
-                    KeyboardSizeKeyboardType.Qwerty -> {
-                        appPreference.qwerty_keyboard_position_landscape = true
-                    }
-                }
-            }
-        }
-    }
-
-    private fun loadPortrait(keyboardType: KeyboardSizeKeyboardType): KeyboardSizeValues {
-        return when (keyboardType) {
-            KeyboardSizeKeyboardType.TenKey -> KeyboardSizeValues(
-                heightDp = appPreference.keyboard_height ?: DefaultHeightDp,
-                widthPercent = appPreference.keyboard_width ?: DefaultWidthPercent,
-                bottomMarginDp = appPreference.keyboard_vertical_margin_bottom ?: DefaultMarginDp,
-                marginStartDp = appPreference.keyboard_margin_start_dp ?: DefaultMarginDp,
-                marginEndDp = appPreference.keyboard_margin_end_dp ?: DefaultMarginDp,
-            )
-
-            KeyboardSizeKeyboardType.Qwerty -> KeyboardSizeValues(
-                heightDp = appPreference.qwerty_keyboard_height ?: DefaultHeightDp,
-                widthPercent = appPreference.qwerty_keyboard_width ?: DefaultWidthPercent,
-                bottomMarginDp = appPreference.qwerty_keyboard_vertical_margin_bottom
-                    ?: DefaultMarginDp,
-                marginStartDp = appPreference.qwerty_keyboard_margin_start_dp ?: DefaultMarginDp,
-                marginEndDp = appPreference.qwerty_keyboard_margin_end_dp ?: DefaultMarginDp,
-            )
-        }
-    }
-
-    private fun loadLandscape(keyboardType: KeyboardSizeKeyboardType): KeyboardSizeValues {
-        return when (keyboardType) {
-            KeyboardSizeKeyboardType.TenKey -> KeyboardSizeValues(
-                heightDp = appPreference.keyboard_height_landscape ?: DefaultHeightDp,
-                widthPercent = appPreference.keyboard_width_landscape ?: DefaultWidthPercent,
-                bottomMarginDp = appPreference.keyboard_vertical_margin_bottom_landscape
-                    ?: DefaultMarginDp,
-                marginStartDp = appPreference.keyboard_margin_start_dp_landscape
-                    ?: DefaultMarginDp,
-                marginEndDp = appPreference.keyboard_margin_end_dp_landscape ?: DefaultMarginDp,
-            )
-
-            KeyboardSizeKeyboardType.Qwerty -> KeyboardSizeValues(
-                heightDp = appPreference.qwerty_keyboard_height_landscape ?: DefaultHeightDp,
-                widthPercent = appPreference.qwerty_keyboard_width_landscape
-                    ?: DefaultWidthPercent,
-                bottomMarginDp = appPreference.qwerty_keyboard_vertical_margin_bottom_landscape
-                    ?: DefaultMarginDp,
-                marginStartDp = appPreference.qwerty_keyboard_margin_start_dp_landscape
-                    ?: DefaultMarginDp,
-                marginEndDp = appPreference.qwerty_keyboard_margin_end_dp_landscape
-                    ?: DefaultMarginDp,
-            )
-        }
-    }
-
-    private fun savePortrait(
-        keyboardType: KeyboardSizeKeyboardType,
-        values: KeyboardSizeValues,
-    ) {
-        when (keyboardType) {
-            KeyboardSizeKeyboardType.TenKey -> {
-                appPreference.keyboard_height = values.heightDp
-                appPreference.keyboard_width = values.widthPercent
-                appPreference.keyboard_vertical_margin_bottom = values.bottomMarginDp
-                appPreference.keyboard_margin_start_dp = values.marginStartDp
-                appPreference.keyboard_margin_end_dp = values.marginEndDp
-            }
-
-            KeyboardSizeKeyboardType.Qwerty -> {
-                appPreference.qwerty_keyboard_height = values.heightDp
-                appPreference.qwerty_keyboard_width = values.widthPercent
-                appPreference.qwerty_keyboard_vertical_margin_bottom = values.bottomMarginDp
-                appPreference.qwerty_keyboard_margin_start_dp = values.marginStartDp
-                appPreference.qwerty_keyboard_margin_end_dp = values.marginEndDp
-            }
-        }
-    }
-
-    private fun saveLandscape(
-        keyboardType: KeyboardSizeKeyboardType,
-        values: KeyboardSizeValues,
-    ) {
-        when (keyboardType) {
-            KeyboardSizeKeyboardType.TenKey -> {
-                appPreference.keyboard_height_landscape = values.heightDp
-                appPreference.keyboard_width_landscape = values.widthPercent
-                appPreference.keyboard_vertical_margin_bottom_landscape = values.bottomMarginDp
-                appPreference.keyboard_margin_start_dp_landscape = values.marginStartDp
-                appPreference.keyboard_margin_end_dp_landscape = values.marginEndDp
-            }
-
-            KeyboardSizeKeyboardType.Qwerty -> {
-                appPreference.qwerty_keyboard_height_landscape = values.heightDp
-                appPreference.qwerty_keyboard_width_landscape = values.widthPercent
-                appPreference.qwerty_keyboard_vertical_margin_bottom_landscape =
-                    values.bottomMarginDp
-                appPreference.qwerty_keyboard_margin_start_dp_landscape = values.marginStartDp
-                appPreference.qwerty_keyboard_margin_end_dp_landscape = values.marginEndDp
-            }
-        }
+    private fun key(orientation: KeyboardSizeOrientation, keyboardType: KeyboardSizeKeyboardType, field: String): String {
+        val prefix = if (keyboardType == KeyboardSizeKeyboardType.Qwerty) "qwerty_keyboard" else "keyboard"
+        val suffix = if (orientation == KeyboardSizeOrientation.Landscape) "_landscape" else ""
+        return "${prefix}_${field}${suffix}_preference"
     }
 
     private fun normalize(values: KeyboardSizeValues): KeyboardSizeValues {
