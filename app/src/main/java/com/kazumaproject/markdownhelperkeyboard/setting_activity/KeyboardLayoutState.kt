@@ -23,12 +23,17 @@ object KeyboardLayoutState {
         onPostureChanged(next)
     }
 
+    @Synchronized
+    internal fun publishPostureSnapshot(next: Boolean, observer: (Boolean) -> Unit) {
+        unfolded = next
+        observer(next)
+    }
+
     fun observeHinge(context: Context, onPostureChanged: (Boolean) -> Unit = {}): SensorEventListener? {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val sensor = manager?.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE)
         if (manager == null || sensor == null) {
-            publishPosture(false, onPostureChanged)
-            onPostureChanged(false) // Notify this observer even if folded was already current.
+            publishPostureSnapshot(false, onPostureChanged)
             return null
         }
         val listener = object : SensorEventListener {
@@ -38,8 +43,7 @@ object KeyboardLayoutState {
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
         if (!manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)) {
-            publishPosture(false, onPostureChanged)
-            onPostureChanged(false)
+            publishPostureSnapshot(false, onPostureChanged)
             return null
         }
         // Deliver the last known posture immediately; registration never resets shared state.

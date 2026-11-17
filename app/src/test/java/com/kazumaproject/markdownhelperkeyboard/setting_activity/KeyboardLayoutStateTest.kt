@@ -31,6 +31,16 @@ class KeyboardLayoutStateTest {
         assertFalse(KeyboardLayoutState.isUnfolded(Configuration()))
     }
 
+    @Test fun unavailableSensorDeliversOneFoldedSnapshotEvenWhenAlreadyFoldedOrPreviouslyExpanded() {
+        for (initial in listOf(false, true)) {
+            KeyboardLayoutState.publishPosture(initial)
+            val snapshots = mutableListOf<Boolean>()
+            KeyboardLayoutState.publishPostureSnapshot(false, snapshots::add)
+            assertEquals(listOf(false), snapshots)
+            assertFalse(KeyboardLayoutState.isUnfolded(Configuration()))
+        }
+    }
+
     @Test fun expandedPreferenceReadsLegacyValueUntilExplicitlyOverriddenAndResetWritesExpandedKey() {
         val legacy = mapOf("keyboard_height_preference" to 260)
         fun read(values: Map<String, Int>, key: String, default: Int, unfolded: Boolean) =
