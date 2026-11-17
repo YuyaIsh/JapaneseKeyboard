@@ -9622,6 +9622,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
             layoutType = layoutType,
             inputMode = customKeyboardMode.name
         )
+        flickView.setSumirePanels(
+            com.kazumaproject.markdownhelperkeyboard.ime_service.sumire.SumirePanelSettings.load(
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this), resources.configuration
+            )
+        )
         flickView.setKeyboard(createSumireKeyboardLayout(), KeyHitTestMode.NEAREST_KEY)
     }
 
