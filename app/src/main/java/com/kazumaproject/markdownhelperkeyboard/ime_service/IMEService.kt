@@ -9200,7 +9200,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     private fun getActiveKeyboardSurface(): KeyboardSurface? {
-        return if (isKeyboardFloatingMode == true) {
+        // Docked Fold panes still own input when hardware-keyboard detection clears
+        // the ordinary floating-window flag.
+        return if (splitController != null || isKeyboardFloatingMode == true) {
             getFloatingKeyboardSurface()
         } else {
             getNormalKeyboardSurface()
