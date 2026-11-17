@@ -16,19 +16,34 @@ object KeyboardLayoutState {
     fun isUnfoldedHingeAngle(angleDegrees: Float?): Boolean = angleDegrees != null && angleDegrees >= FLAT_HINGE_DEGREES
     fun preferenceKey(key: String, unfolded: Boolean): String = if (unfolded) "${key}_unfolded" else key
 
+    @Synchronized
+    fun publishPosture(next: Boolean, onPostureChanged: (Boolean) -> Unit = {}) {
+        if (unfolded == next) return
+        unfolded = next
+        onPostureChanged(next)
+    }
+
     fun observeHinge(context: Context, onPostureChanged: (Boolean) -> Unit = {}): SensorEventListener? {
-        // A newly active owner must never inherit a stale unfolded value before its first sample.
-        unfolded = false
-        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return null
-        val sensor = manager.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE) ?: return null
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val sensor = manager?.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE)
+        if (manager == null || sensor == null) {
+            publishPosture(false, onPostureChanged)
+            onPostureChanged(false) // Notify this observer even if folded was already current.
+            return null
+        }
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                val next = isUnfoldedHingeAngle(event.values.firstOrNull())
-                if (unfolded != next) { unfolded = next; onPostureChanged(next) }
+                publishPosture(isUnfoldedHingeAngle(event.values.firstOrNull()), onPostureChanged)
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
-        if (!manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)) return null
+        if (!manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)) {
+            publishPosture(false, onPostureChanged)
+            onPostureChanged(false)
+            return null
+        }
+        // Deliver the last known posture immediately; registration never resets shared state.
+        onPostureChanged(unfolded)
         return listener
     }
 

@@ -162,7 +162,6 @@ class KeyboardSizeDirectInputFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        onFoldPostureChanged(KeyboardLayoutState.isUnfolded(resources.configuration))
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(true)
     }
 

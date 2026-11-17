@@ -16,6 +16,21 @@ class KeyboardLayoutStateTest {
         assertEquals(unfoldedFoldable.orientation, Configuration.ORIENTATION_PORTRAIT)
     }
 
+    @Test fun multipleObserversDoNotResetSharedPostureAndNewObserverGetsImmediateSnapshot() {
+        KeyboardLayoutState.publishPosture(true)
+        val first = mutableListOf<Boolean>()
+        val second = mutableListOf<Boolean>()
+        first += KeyboardLayoutState.isUnfolded(Configuration())
+        second += KeyboardLayoutState.isUnfolded(Configuration())
+        assertEquals(listOf(true), first)
+        assertEquals(listOf(true), second)
+        var changes = 0
+        KeyboardLayoutState.publishPosture(true) { changes++ }
+        KeyboardLayoutState.publishPosture(false) { changes++ }
+        assertEquals(1, changes)
+        assertFalse(KeyboardLayoutState.isUnfolded(Configuration()))
+    }
+
     @Test fun expandedPreferenceReadsLegacyValueUntilExplicitlyOverriddenAndResetWritesExpandedKey() {
         val legacy = mapOf("keyboard_height_preference" to 260)
         fun read(values: Map<String, Int>, key: String, default: Int, unfolded: Boolean) =
