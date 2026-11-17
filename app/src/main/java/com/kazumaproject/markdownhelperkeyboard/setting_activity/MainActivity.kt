@@ -34,9 +34,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
         hingePostureListener = KeyboardLayoutState.observeHinge(this) {
-            supportFragmentManager.fragments.forEach { fragment ->
-                fragment.childFragmentManager.fragments.forEach { child -> child.view?.requestLayout() }
-                fragment.view?.requestLayout()
+            runOnUiThread {
+                supportFragmentManager.fragments.forEach { fragment ->
+                    val fragments = fragment.childFragmentManager.fragments + fragment
+                    fragments.filterIsInstance<com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment>()
+                        .forEach { it.onFoldPostureChanged(KeyboardLayoutState.isUnfolded(resources.configuration)) }
+                }
             }
         }
     }

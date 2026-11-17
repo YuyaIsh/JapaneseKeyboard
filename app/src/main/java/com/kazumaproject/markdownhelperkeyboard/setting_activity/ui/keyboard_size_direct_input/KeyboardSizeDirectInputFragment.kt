@@ -39,6 +39,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     private val binding get() = _binding!!
 
     private var unfolded = false
+    private var postureSpinner: Spinner? = null
     private lateinit var panelControls: LinearLayout
     private val panelPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
 
@@ -81,6 +82,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
                 }
             }
         }
+        postureSpinner = state
         container.addView(state, 0)
         panelControls = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         container.addView(panelControls)
@@ -151,8 +153,16 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         outState.putBoolean("unfolded", unfolded)
     }
 
+    fun onFoldPostureChanged(isUnfolded: Boolean) {
+        if (!isAdded || !this::panelControls.isInitialized || unfolded == isUnfolded) return
+        unfolded = isUnfolded
+        postureSpinner?.setSelection(if (isUnfolded) 1 else 0)
+        loadSelectedValues()
+    }
+
     override fun onResume() {
         super.onResume()
+        onFoldPostureChanged(KeyboardLayoutState.isUnfolded(resources.configuration))
         (activity as? AppCompatActivity)?.supportActionBar?.setDisplayHomeAsUpEnabled(true)
     }
 

@@ -17,6 +17,8 @@ object KeyboardLayoutState {
     fun preferenceKey(key: String, unfolded: Boolean): String = if (unfolded) "${key}_unfolded" else key
 
     fun observeHinge(context: Context, onPostureChanged: (Boolean) -> Unit = {}): SensorEventListener? {
+        // A newly active owner must never inherit a stale unfolded value before its first sample.
+        unfolded = false
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return null
         val sensor = manager.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE) ?: return null
         val listener = object : SensorEventListener {
