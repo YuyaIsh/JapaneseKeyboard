@@ -1,14 +1,36 @@
 package com.kazumaproject.markdownhelperkeyboard.setting_activity
 
+import android.content.Context
 import android.content.res.Configuration
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 
-/**
- * Classifies the current expanded display area, not the device's minimum width.
- * smallestScreenWidthDp is stable across folding and therefore cannot detect posture changes.
- */
+/** Fold posture comes only from a physical hinge-angle sensor; unavailable means folded. */
 object KeyboardLayoutState {
-    fun isUnfolded(configuration: Configuration): Boolean =
-        configuration.screenWidthDp >= 600 && configuration.screenWidthDp > configuration.smallestScreenWidthDp
+    private const val FLAT_HINGE_DEGREES = 165f
+    @Volatile private var unfolded = false
 
+    fun isUnfolded(@Suppress("UNUSED_PARAMETER") configuration: Configuration): Boolean = unfolded
+    fun isUnfoldedHingeAngle(angleDegrees: Float?): Boolean = angleDegrees != null && angleDegrees >= FLAT_HINGE_DEGREES
     fun preferenceKey(key: String, unfolded: Boolean): String = if (unfolded) "${key}_unfolded" else key
+
+    fun observeHinge(context: Context, onPostureChanged: (Boolean) -> Unit = {}): SensorEventListener? {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return null
+        val sensor = manager.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE) ?: return null
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val next = isUnfoldedHingeAngle(event.values.firstOrNull())
+                if (unfolded != next) { unfolded = next; onPostureChanged(next) }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        if (!manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)) return null
+        return listener
+    }
+
+    fun stopObserving(context: Context, listener: SensorEventListener?) {
+        if (listener != null) (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.unregisterListener(listener)
+    }
 }

@@ -5,16 +5,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class KeyboardLayoutStateTest {
-    @Test fun expandedCurrentWidthClassifiesPostureEvenWhenDeviceMinimumRemainsCompact() {
-        val folded = Configuration().apply { smallestScreenWidthDp = 360; screenWidthDp = 420 }
-        val unfolded = Configuration().apply { smallestScreenWidthDp = 360; screenWidthDp = 700 }
-        assertFalse(KeyboardLayoutState.isUnfolded(folded))
-        assertTrue(KeyboardLayoutState.isUnfolded(unfolded))
-    }
-
-    @Test fun largeSmallestWidthDoesNotMisclassifyCurrentCompactWindow() {
-        val compactWindow = Configuration().apply { smallestScreenWidthDp = 720; screenWidthDp = 500 }
-        assertFalse(KeyboardLayoutState.isUnfolded(compactWindow))
+    @Test fun postureUsesHingeSignalIndependentlyOfOrientationAndFallsBackFolded() {
+        val foldedPhone = Configuration().apply { orientation = Configuration.ORIENTATION_LANDSCAPE; screenWidthDp = 800; smallestScreenWidthDp = 390 }
+        val unfoldedFoldable = Configuration().apply { orientation = Configuration.ORIENTATION_PORTRAIT; screenWidthDp = 400; smallestScreenWidthDp = 390 }
+        // The orientation and available width do not decide posture: only the hinge signal does.
+        assertFalse(KeyboardLayoutState.isUnfoldedHingeAngle(null))
+        assertFalse(KeyboardLayoutState.isUnfoldedHingeAngle(90f))
+        assertTrue(KeyboardLayoutState.isUnfoldedHingeAngle(170f))
+        assertEquals(foldedPhone.orientation, Configuration.ORIENTATION_LANDSCAPE)
+        assertEquals(unfoldedFoldable.orientation, Configuration.ORIENTATION_PORTRAIT)
     }
 
     @Test fun expandedPreferenceReadsLegacyValueUntilExplicitlyOverriddenAndResetWritesExpandedKey() {

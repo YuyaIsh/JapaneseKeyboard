@@ -1,6 +1,7 @@
 package com.kazumaproject.markdownhelperkeyboard.ime_service
 
 import com.kazumaproject.markdownhelperkeyboard.ime_service.split_keyboard.*
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState
 import com.kazumaproject.markdownhelperkeyboard.ime_service.floating_dictionary.DictionaryKind
 import com.kazumaproject.markdownhelperkeyboard.ime_service.floating_dictionary.FloatingDictionaryController
 import com.kazumaproject.markdownhelperkeyboard.ime_service.floating_dictionary.FloatingDictionaryStore
@@ -444,6 +445,8 @@ import com.google.android.material.R as MaterialR
 @AndroidEntryPoint
 class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     ClipboardHistoryToggleListener, InputManager.InputDeviceListener {
+    private var hingePostureListener: android.hardware.SensorEventListener? = null
+
 
     private sealed class CandidateLongPressAction {
         object ForgetLearnedEntry : CandidateLongPressAction()
@@ -5473,6 +5476,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onStartInputView(editorInfo: EditorInfo?, restarting: Boolean) {
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = KeyboardLayoutState.observeHinge(this) { refreshKeyboardForCurrentOrientation() }
         stopSplitKeyboard()
         super.onStartInputView(editorInfo, restarting)
         flickInputPreviewCoordinator.cancel(restore = true)
@@ -5883,6 +5888,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = null
         stopSplitKeyboard()
         if (!dictionaryConfigurationChanging) dictionaryFloats?.endSession()
         composingGuide?.stop()
@@ -5939,6 +5946,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onDestroy() {
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = null
         stopSplitKeyboard()
         dictionaryFloats?.destroy()
         dictionaryFloats = null

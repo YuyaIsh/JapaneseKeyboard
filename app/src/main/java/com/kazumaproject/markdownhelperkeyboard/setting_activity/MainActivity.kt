@@ -28,6 +28,26 @@ import com.kazumaproject.core.R as CoreR
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
+    private var hingePostureListener: android.hardware.SensorEventListener? = null
+
+    override fun onResume() {
+        super.onResume()
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = KeyboardLayoutState.observeHinge(this) {
+            supportFragmentManager.fragments.forEach { fragment ->
+                fragment.childFragmentManager.fragments.forEach { child -> child.view?.requestLayout() }
+                fragment.view?.requestLayout()
+            }
+        }
+    }
+
+    override fun onPause() {
+        hingePostureListener?.let { KeyboardLayoutState.stopObserving(this, it) }
+        hingePostureListener = null
+        super.onPause()
+    }
+
+
     @Inject
     lateinit var appPreference: AppPreference
     private lateinit var binding: ActivityMainBinding
