@@ -24740,6 +24740,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private fun resetAllFlags() {
         Timber.d("onUpdate resetAllFlags called")
+        // Snapshot pane modes before the shared mode is reset; an editor restart can
+        // arrive while Fold panes are still attached, before onStartInputView retires them.
+        stopSplitKeyboard()
         clearPhysicalCandidateCompositionSession("reset all flags")
         clearZeroQueryAllState(refresh = false)
         customKeyboardRenderJob?.cancel()

@@ -982,6 +982,30 @@ class SplitKeyboardServiceSyncTest {
         assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
     }
 
+    @Test fun inputRestartSavesFoldModesBeforeResettingTheSharedKeyboard() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        for (active in SplitSlot.entries) for (activeMode in listOf(TenKeyQWERTYMode.Sumire, TenKeyQWERTYMode.TenKeyQWERTY)) {
+            Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+            Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+            SplitSlot.entries.forEach { slot ->
+                install(slot, if (slot == active) activeMode else TenKeyQWERTYMode.Sumire)
+                Reflect.setField(inputs.getValue(slot), "selection", SplitKeyboardSelection(KeyboardType.SUMIRE))
+            }
+            select(active, activeMode)
+            // onStartInput(restarting=true) resets shared state before onStartInputView retires panes.
+            call("resetAllFlags")
+            Reflect.callInstanceMethod<Unit>(service, "stopSplitKeyboard", ClassParameter.from(Boolean::class.javaPrimitiveType!!, false))
+            val saved = Reflect.getField<Map<SplitSlot, Any>>(service, "savedFoldInputs")
+            SplitSlot.entries.forEach { slot ->
+                assertEquals(SplitKeyboardSelection(KeyboardType.SUMIRE), Reflect.getField<SplitKeyboardSelection>(saved.getValue(slot), "selection"))
+                assertEquals(if (slot == active) activeMode else TenKeyQWERTYMode.Sumire,
+                    Reflect.getField<TenKeyQWERTYMode>(saved.getValue(slot), "mode"))
+            }
+        }
+    }
+
     @Test fun foldModeKeysStillRenderInBothPanesAfterOrdinaryFloatingFlagIsCleared() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         // Hardware-keyboard detection can clear the ordinary floating flag while Fold panes remain docked.
