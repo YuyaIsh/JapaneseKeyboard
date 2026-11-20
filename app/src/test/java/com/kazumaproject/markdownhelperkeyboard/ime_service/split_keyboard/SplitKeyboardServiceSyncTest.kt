@@ -886,6 +886,31 @@ class SplitKeyboardServiceSyncTest {
         }
     }
 
+    @Test fun rebuildingFoldDockReservesKeyboardHeightBeforeAsyncPanesArrive() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "tenkeyHeightPreferenceValue", 220)
+        Reflect.setField(service, "tenkeyHeightLandScapePreferenceValue", 220)
+        Reflect.setField(service, "candidateViewHeightEmptyPreferenceValue", 60)
+        Reflect.setField(service, "candidateViewLandScapeHeightEmptyPreferenceValue", 60)
+        val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
+        main.root.layoutParams = android.widget.FrameLayout.LayoutParams(-1, -2)
+        Reflect.setField(service, "mainLayoutBinding", main)
+        val host = Reflect.callInstanceMethod<android.widget.FrameLayout>(service, "ensureFoldDockHost",
+            ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main))
+        main.root.setPadding(0, 0, 0, 24)
+        val expectedBodyAndCandidates = context.dpToPx(280)
+        for (width in listOf(2208, 1840)) {
+            main.root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
+            assertEquals("An empty loading dock must not start the IME animation at navigation-bar height",
+                expectedBodyAndCandidates + 24, main.root.measuredHeight)
+        }
+        host.addView(android.widget.FrameLayout(context).apply { minimumHeight = expectedBodyAndCandidates })
+        main.root.measure(View.MeasureSpec.makeMeasureSpec(1840, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
+        assertEquals(expectedBodyAndCandidates + 24, main.root.measuredHeight)
+    }
+
     @Test fun foldDockHostIsBottomDockedAndHidesTheRegularImeChildren() {
         val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
         main.root.layoutParams = android.widget.FrameLayout.LayoutParams(500, 440, android.view.Gravity.BOTTOM).apply {
