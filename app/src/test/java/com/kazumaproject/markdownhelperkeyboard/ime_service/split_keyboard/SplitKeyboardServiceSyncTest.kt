@@ -1007,6 +1007,62 @@ class SplitKeyboardServiceSyncTest {
         assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
     }
 
+    @Test fun nonTenkeyFoldSelectionsNeverRestoreTheNativeNumberAndSymbolViewAfterInputRestart() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        for (mainType in listOf(KeyboardType.SUMIRE, KeyboardType.CUSTOM, KeyboardType.QWERTY)) {
+            val selections = mapOf(SplitSlot.MAIN to SplitKeyboardSelection(mainType, "existing-custom"),
+                SplitSlot.SUB to SplitKeyboardSelection(KeyboardType.SUMIRE))
+            val expectedModes = mapOf(SplitSlot.MAIN to when (mainType) {
+                KeyboardType.CUSTOM -> TenKeyQWERTYMode.Custom
+                KeyboardType.QWERTY -> TenKeyQWERTYMode.TenKeyQWERTY
+                else -> TenKeyQWERTYMode.Sumire
+            }, SplitSlot.SUB to TenKeyQWERTYMode.Sumire)
+            selections.forEach { (slot, selection) -> settings.saveSelection(slot, selection) }
+            for (active in SplitSlot.entries) {
+                Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+                Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+                SplitSlot.entries.forEach { slot ->
+                    install(slot, expectedModes.getValue(slot))
+                    Reflect.setField(inputs.getValue(slot), "selection", selections.getValue(slot))
+                    bindings.getValue(slot).keyboardViewFloating.setUseThreeStateKeyboard(false)
+                }
+                select(active, expectedModes.getValue(active))
+                // Same order as onStartInput: retire panes before resetting shared mode.
+                call("resetAllFlags")
+                Reflect.callInstanceMethod<Unit>(service, "stopSplitKeyboard",
+                    ClassParameter.from(Boolean::class.javaPrimitiveType!!, false))
+                Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+                Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+                SplitSlot.entries.forEach { slot ->
+                    install(slot, expectedModes.getValue(slot))
+                    val state = inputs.getValue(slot)
+                    val selection = Reflect.callInstanceMethod<SplitKeyboardSelection>(service, "resolveFoldKeyboardSelection",
+                        ClassParameter.from(SplitSlot::class.java, slot),
+                        ClassParameter.from(SplitKeyboardSelection::class.java, SplitKeyboardSelection(KeyboardType.TENKEY)))
+                        .resolved(setOf("existing-custom"))
+                    assertEquals(selections.getValue(slot), selection)
+                    Reflect.setField(state, "selection", selection)
+                    Reflect.callInstanceMethod<Unit>(service, "restoreFoldInputSession",
+                        ClassParameter.from(state.javaClass, state))
+                }
+                SplitSlot.entries.forEach { slot ->
+                    Reflect.setField(service, "activeSplitSlot", null)
+                    Reflect.callInstanceMethod<Unit>(service, "activateSplitInput", ClassParameter.from(SplitSlot::class.java, slot))
+                    call("renderCurrentKeyboardStateOnActiveSurface")
+                    val binding = bindings.getValue(slot)
+                    assertEquals("$mainType/$slot with $active active before restart must hide native 123/§",
+                        View.GONE, binding.keyboardViewFloating.visibility)
+                    assertEquals(View.VISIBLE, if (expectedModes.getValue(slot) == TenKeyQWERTYMode.TenKeyQWERTY)
+                        binding.qwertyViewFloating.visibility else binding.customLayoutFloating.visibility)
+                    assertEquals(selections.getValue(slot), settings.selection(slot))
+                }
+            }
+        }
+    }
+
     @Test fun inputRestartSavesFoldModesBeforeResettingTheSharedKeyboard() {
         Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
         Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
