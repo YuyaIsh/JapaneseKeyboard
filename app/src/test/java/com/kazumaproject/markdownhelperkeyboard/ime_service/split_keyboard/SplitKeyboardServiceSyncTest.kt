@@ -886,6 +886,31 @@ class SplitKeyboardServiceSyncTest {
         }
     }
 
+    @Test fun rebuildingFoldDockReservesKeyboardHeightBeforeAsyncPanesArrive() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "tenkeyHeightPreferenceValue", 220)
+        Reflect.setField(service, "tenkeyHeightLandScapePreferenceValue", 220)
+        Reflect.setField(service, "candidateViewHeightEmptyPreferenceValue", 60)
+        Reflect.setField(service, "candidateViewLandScapeHeightEmptyPreferenceValue", 60)
+        val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
+        main.root.layoutParams = android.widget.FrameLayout.LayoutParams(-1, -2)
+        Reflect.setField(service, "mainLayoutBinding", main)
+        val host = Reflect.callInstanceMethod<android.widget.FrameLayout>(service, "ensureFoldDockHost",
+            ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main))
+        main.root.setPadding(0, 0, 0, 24)
+        val expectedBodyAndCandidates = context.dpToPx(280)
+        for (width in listOf(2208, 1840)) {
+            main.root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
+            assertEquals("An empty loading dock must not start the IME animation at navigation-bar height",
+                expectedBodyAndCandidates + 24, main.root.measuredHeight)
+        }
+        host.addView(android.widget.FrameLayout(context).apply { minimumHeight = expectedBodyAndCandidates })
+        main.root.measure(View.MeasureSpec.makeMeasureSpec(1840, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
+        assertEquals(expectedBodyAndCandidates + 24, main.root.measuredHeight)
+    }
+
     @Test fun foldDockHostIsBottomDockedAndHidesTheRegularImeChildren() {
         val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
         main.root.layoutParams = android.widget.FrameLayout.LayoutParams(500, 440, android.view.Gravity.BOTTOM).apply {
@@ -980,6 +1005,144 @@ class SplitKeyboardServiceSyncTest {
         verify(connection, times(2)).finishComposingText()
         assertEquals("", text.value)
         assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(SplitSlot.MAIN), "inputMode"))
+    }
+
+    @Test fun nonTenkeyFoldSelectionsNeverRestoreTheNativeNumberAndSymbolViewAfterInputRestart() {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val settings = SplitKeyboardSettings(prefs)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        for (mainType in listOf(KeyboardType.SUMIRE, KeyboardType.CUSTOM, KeyboardType.QWERTY)) {
+            val selections = mapOf(SplitSlot.MAIN to SplitKeyboardSelection(mainType, "existing-custom"),
+                SplitSlot.SUB to SplitKeyboardSelection(KeyboardType.SUMIRE))
+            val expectedModes = mapOf(SplitSlot.MAIN to when (mainType) {
+                KeyboardType.CUSTOM -> TenKeyQWERTYMode.Custom
+                KeyboardType.QWERTY -> TenKeyQWERTYMode.TenKeyQWERTY
+                else -> TenKeyQWERTYMode.Sumire
+            }, SplitSlot.SUB to TenKeyQWERTYMode.Sumire)
+            selections.forEach { (slot, selection) -> settings.saveSelection(slot, selection) }
+            for (active in SplitSlot.entries) {
+                Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+                Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+                SplitSlot.entries.forEach { slot ->
+                    install(slot, expectedModes.getValue(slot))
+                    Reflect.setField(inputs.getValue(slot), "selection", selections.getValue(slot))
+                    bindings.getValue(slot).keyboardViewFloating.setUseThreeStateKeyboard(false)
+                }
+                select(active, expectedModes.getValue(active))
+                // Same order as onStartInput: retire panes before resetting shared mode.
+                call("resetAllFlags")
+                Reflect.callInstanceMethod<Unit>(service, "stopSplitKeyboard",
+                    ClassParameter.from(Boolean::class.javaPrimitiveType!!, false))
+                Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+                Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+                SplitSlot.entries.forEach { slot ->
+                    install(slot, expectedModes.getValue(slot))
+                    val state = inputs.getValue(slot)
+                    val selection = Reflect.callInstanceMethod<SplitKeyboardSelection>(service, "resolveFoldKeyboardSelection",
+                        ClassParameter.from(SplitSlot::class.java, slot),
+                        ClassParameter.from(SplitKeyboardSelection::class.java, SplitKeyboardSelection(KeyboardType.TENKEY)))
+                        .resolved(setOf("existing-custom"))
+                    assertEquals(selections.getValue(slot), selection)
+                    Reflect.setField(state, "selection", selection)
+                    Reflect.callInstanceMethod<Unit>(service, "restoreFoldInputSession",
+                        ClassParameter.from(state.javaClass, state))
+                }
+                SplitSlot.entries.forEach { slot ->
+                    Reflect.setField(service, "activeSplitSlot", null)
+                    Reflect.callInstanceMethod<Unit>(service, "activateSplitInput", ClassParameter.from(SplitSlot::class.java, slot))
+                    call("renderCurrentKeyboardStateOnActiveSurface")
+                    val binding = bindings.getValue(slot)
+                    assertEquals("$mainType/$slot with $active active before restart must hide native 123/§",
+                        View.GONE, binding.keyboardViewFloating.visibility)
+                    assertEquals(View.VISIBLE, if (expectedModes.getValue(slot) == TenKeyQWERTYMode.TenKeyQWERTY)
+                        binding.qwertyViewFloating.visibility else binding.customLayoutFloating.visibility)
+                    assertEquals(selections.getValue(slot), settings.selection(slot))
+                }
+            }
+        }
+    }
+
+    @Test fun inputRestartSavesFoldModesBeforeResettingTheSharedKeyboard() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        for (active in SplitSlot.entries) for (activeMode in listOf(TenKeyQWERTYMode.Sumire, TenKeyQWERTYMode.TenKeyQWERTY)) {
+            Reflect.setField(service, "splitController", SplitKeyboardController(context, View(context), {}, {}, {}))
+            Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+            SplitSlot.entries.forEach { slot ->
+                install(slot, if (slot == active) activeMode else TenKeyQWERTYMode.Sumire)
+                Reflect.setField(inputs.getValue(slot), "selection", SplitKeyboardSelection(KeyboardType.SUMIRE))
+            }
+            select(active, activeMode)
+            // onStartInput(restarting=true) resets shared state before onStartInputView retires panes.
+            call("resetAllFlags")
+            Reflect.callInstanceMethod<Unit>(service, "stopSplitKeyboard", ClassParameter.from(Boolean::class.javaPrimitiveType!!, false))
+            val saved = Reflect.getField<Map<SplitSlot, Any>>(service, "savedFoldInputs")
+            SplitSlot.entries.forEach { slot ->
+                assertEquals(SplitKeyboardSelection(KeyboardType.SUMIRE), Reflect.getField<SplitKeyboardSelection>(saved.getValue(slot), "selection"))
+                assertEquals(if (slot == active) activeMode else TenKeyQWERTYMode.Sumire,
+                    Reflect.getField<TenKeyQWERTYMode>(saved.getValue(slot), "mode"))
+            }
+        }
+    }
+
+    @Test fun foldModeKeysStillRenderInBothPanesAfterOrdinaryFloatingFlagIsCleared() {
+        Reflect.setField(service, "activeFoldLayout", FoldKeyboardLayout.SPLIT)
+        // Hardware-keyboard detection can clear the ordinary floating flag while Fold panes remain docked.
+        Reflect.setField(service, "isKeyboardFloatingMode", false)
+        Reflect.setField(service, "sumireEnglishQwertyPreference", true)
+        Reflect.setField(service, "qwertySwitchNumberKeyWithoutNumberPreference", true)
+        Reflect.setField(service, "englishEngine", mock(IMEService::class.java.getDeclaredField("englishEngine").type))
+        Reflect.setField(service, "listAdapter", mock(IMEService::class.java.getDeclaredField("listAdapter").type))
+        Reflect.setField(service, "suggestionAdapter", SuggestionAdapter())
+        val main = com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding.inflate(LayoutInflater.from(context))
+        Reflect.setField(service, "mainLayoutBinding", main)
+        SplitSlot.entries.forEach { slot ->
+            install(slot, TenKeyQWERTYMode.Sumire)
+            Reflect.setField(inputs.getValue(slot), "selection", SplitKeyboardSelection(KeyboardType.SUMIRE))
+            Reflect.callInstanceMethod<Unit>(service, "configureFlickKeyboardView",
+                ClassParameter.from(com.kazumaproject.custom_keyboard.view.FlickKeyboardView::class.java, bindings.getValue(slot).customLayoutFloating),
+                ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main),
+                ClassParameter.from(Boolean::class.javaPrimitiveType!!, true))
+            Reflect.callInstanceMethod<Unit>(service, "configureQwertyView",
+                ClassParameter.from(com.kazumaproject.qwerty_keyboard.ui.QWERTYKeyboardView::class.java, bindings.getValue(slot).qwertyViewFloating),
+                ClassParameter.from(com.kazumaproject.markdownhelperkeyboard.databinding.MainLayoutBinding::class.java, main))
+        }
+        select(SplitSlot.MAIN, TenKeyQWERTYMode.Sumire)
+        for (slot in SplitSlot.entries) {
+            Reflect.callInstanceMethod<Unit>(service, "activateSplitInput", ClassParameter.from(SplitSlot::class.java, slot))
+            val binding = bindings.getValue(slot)
+            val listener = Reflect.getField<com.kazumaproject.custom_keyboard.view.FlickKeyboardView.OnKeyboardActionListener>(binding.customLayoutFloating, "listener")
+            for (action in listOf(
+                com.kazumaproject.custom_keyboard.data.KeyAction.SwitchToNumberLayout,
+                com.kazumaproject.custom_keyboard.data.KeyAction.SwitchToKanaLayout,
+                com.kazumaproject.custom_keyboard.data.KeyAction.SwitchToEnglishLayout)) {
+                listener.onAction(action, false)
+                Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, slot))
+                val expected = when (action) {
+                    com.kazumaproject.custom_keyboard.data.KeyAction.SwitchToNumberLayout -> InputMode.ModeNumber
+                    com.kazumaproject.custom_keyboard.data.KeyAction.SwitchToKanaLayout -> InputMode.ModeJapanese
+                    else -> InputMode.ModeEnglish
+                }
+                assertEquals(expected, Reflect.getField<InputMode>(inputs.getValue(slot), "inputMode"))
+                if (expected == InputMode.ModeEnglish) {
+                    assertEquals(View.VISIBLE, binding.qwertyViewFloating.visibility)
+                    val qwertyListener = Reflect.getField<com.kazumaproject.core.domain.listener.QWERTYKeyListener>(binding.qwertyViewFloating, "qwertyKeyListener")
+                    qwertyListener.onReleasedQWERTYKey(com.kazumaproject.core.domain.qwerty.QWERTYKey.QWERTYKeySwitchNumberKey, null, null)
+                    assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(service, "currentInputModeForSession"))
+                    assertEquals(View.VISIBLE, binding.customLayoutFloating.visibility)
+                    Reflect.callInstanceMethod<Unit>(service, "saveSplitInput", ClassParameter.from(SplitSlot::class.java, slot))
+                } else {
+                    assertEquals(View.VISIBLE, binding.customLayoutFloating.visibility)
+                    val layout = Reflect.getField<com.kazumaproject.custom_keyboard.data.KeyboardLayout>(binding.customLayoutFloating, "currentLayout")
+                    assertTrue(layout.keys.any { it.label.substringBefore("\n") == if (expected == InputMode.ModeNumber) "1" else "あ" })
+                }
+                val other = SplitSlot.entries.single { it != slot }
+                assertEquals(InputMode.ModeJapanese, Reflect.getField<InputMode>(inputs.getValue(other), "inputMode"))
+                assertEquals(TenKeyQWERTYMode.Sumire, Reflect.getField<TenKeyQWERTYMode>(inputs.getValue(other), "mode"))
+            }
+        }
     }
 
     @Test fun foldLayoutKeyCyclesOnlyActivePaneWithoutChangingSettings() {

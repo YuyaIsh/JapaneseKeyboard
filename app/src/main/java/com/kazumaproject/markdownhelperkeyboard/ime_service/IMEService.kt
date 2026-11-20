@@ -2580,6 +2580,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private fun ensureFoldDockHost(main: MainLayoutBinding): FrameLayout {
         val host = foldDockHost ?: FoldKeyboardDockHost(main.root.context).also {
+            // The panes load asynchronously. A navigation-bar-only first measurement
+            // can leave the resized IME surface shifted offscreen after rotation.
+            it.minimumHeight = (activeFoldLayout ?: splitSettings.foldLayout).slots.maxOf { slot ->
+                foldPaneBodyHeight(slot) + foldPaneCandidateHeight(slot)
+            }
             foldDockHost = it
             foldNormalLayoutParams = (main.root.layoutParams as? FrameLayout.LayoutParams)?.let { FrameLayout.LayoutParams(it) }
             main.root.addView(it, FrameLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
@@ -2783,6 +2788,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
                 }
                 suggestionAdapter?.registerAdapterDataObserver(observer)
                 splitCandidateObserver = observer
+                // The attached panes now supply their natural (and mode-dependent) height.
+                if (foldLayout != null) host.minimumHeight = 0
                 controller.start()
                 scheduleSplitCandidates()
                 composingGuide?.refresh()
@@ -9200,7 +9207,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     private fun getActiveKeyboardSurface(): KeyboardSurface? {
-        return if (isKeyboardFloatingMode == true) {
+        // Docked Fold panes still own input when hardware-keyboard detection clears
+        // the ordinary floating-window flag.
+        return if (splitController != null || isKeyboardFloatingMode == true) {
             getFloatingKeyboardSurface()
         } else {
             getNormalKeyboardSurface()
@@ -24738,6 +24747,9 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private fun resetAllFlags() {
         Timber.d("onUpdate resetAllFlags called")
+        // Snapshot pane modes before the shared mode is reset; an editor restart can
+        // arrive while Fold panes are still attached, before onStartInputView retires them.
+        stopSplitKeyboard()
         clearPhysicalCandidateCompositionSession("reset all flags")
         clearZeroQueryAllState(refresh = false)
         customKeyboardRenderJob?.cancel()
