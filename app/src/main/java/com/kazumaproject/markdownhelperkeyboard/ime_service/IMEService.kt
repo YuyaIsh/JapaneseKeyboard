@@ -2442,6 +2442,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private var preservingFoldConfiguration = false
     private var foldMonitor: FoldKeyboardMonitor? = null
+    private var foldSizePostureListener: android.hardware.SensorEventListener? = null
     private var activeFoldLayout: FoldKeyboardLayout? = null
     private var foldDockHost: FoldKeyboardDockHost? = null
     private var foldNormalLayoutParams: FrameLayout.LayoutParams? = null
@@ -2579,7 +2580,18 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     private fun ensureFoldDockHost(main: MainLayoutBinding): FrameLayout {
-        val host = foldDockHost ?: FoldKeyboardDockHost(main.root.context).also {
+        val host = foldDockHost ?: FoldKeyboardDockHost(main.root.context) { slot ->
+            val prefs = getKeyboardSizePreferences()
+            val mode = if (slot == activeSplitSlot) qwertyMode.value else splitInputs[slot]?.mode
+            val qwerty = mode == TenKeyQWERTYMode.TenKeyQWERTY || mode == TenKeyQWERTYMode.TenKeyQWERTYRomaji
+            com.kazumaproject.markdownhelperkeyboard.ime_service.split_keyboard.FoldPanePlacement(
+                widthPercent = if (qwerty) prefs.qwertyWidthPref else prefs.widthPref,
+                bottomMargin = dpToPx(if (qwerty) prefs.qwertyBottomMargin else prefs.bottomMargin),
+                positionIsEnd = if (qwerty) prefs.qwertyPositionIsEnd else prefs.positionIsEnd,
+                marginStart = dpToPx(if (qwerty) prefs.qwertyMarginStart else prefs.keyboardMarginStart),
+                marginEnd = dpToPx(if (qwerty) prefs.qwertyMarginEnd else prefs.keyboardMarginEnd),
+            )
+        }.also {
             // The panes load asynchronously. A navigation-bar-only first measurement
             // can leave the resized IME surface shifted offscreen after rotation.
             it.minimumHeight = (activeFoldLayout ?: splitSettings.foldLayout).slots.maxOf { slot ->
@@ -2891,6 +2903,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private fun syncSplitPresentation() {
         if (splitController == null) return
+        foldDockHost?.requestLayout()
         // Capture live state without routing input to the pane being painted.
         val text = inputString.value
         splitInputs.values.forEach { state ->
@@ -3083,6 +3096,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         )
         runtimeInputPreferenceListenerRegistered = true
         syncRuntimeInputPreferences()
+        foldSizePostureListener = com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState.observeHinge(this) {
+            reloadKeyboardLayoutEditCachesFromPreferences()
+            foldDockHost?.requestLayout()
+            mainLayoutBinding?.let { updateKeyboardLayout(it) }
+        }
         startKanaKanjiEngineLoad()
 
         if (AppVariantConfig.hasGemma) {
@@ -6179,6 +6197,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onDestroy() {
+        com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState.stopObserving(this, foldSizePostureListener)
+        foldSizePostureListener = null
         foldMonitor?.stop()
         foldMonitor = null
         stopSplitKeyboard()

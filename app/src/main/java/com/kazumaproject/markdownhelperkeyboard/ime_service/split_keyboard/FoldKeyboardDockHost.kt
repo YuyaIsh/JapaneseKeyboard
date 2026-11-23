@@ -6,7 +6,24 @@ import android.widget.FrameLayout
 import kotlin.math.roundToInt
 
 /** Normal IME content: wraps the tallest pane within the space offered by the IME parent. */
-internal class FoldKeyboardDockHost(context: Context) : FrameLayout(context) {
+internal data class FoldPanePlacement(
+    val widthPercent: Int = 100,
+    val bottomMargin: Int = 0,
+    val positionIsEnd: Boolean = true,
+    val marginStart: Int = 0,
+    val marginEnd: Int = 0,
+)
+
+internal class FoldKeyboardDockHost(
+    context: Context,
+    private val placement: (SplitSlot) -> FoldPanePlacement = { FoldPanePlacement() },
+) : FrameLayout(context) {
+    private fun size(slot: SplitSlot) =
+        if (foldLayout == FoldKeyboardLayout.SPLIT) placement(slot) else FoldPanePlacement()
+
+    private fun childWidth(slot: SplitSlot, paneWidth: Int) =
+        (paneWidth * size(slot).widthPercent.coerceIn(32, 100) / 100).coerceAtLeast(1)
+
     var foldLayout = FoldKeyboardLayout.SPLIT
         set(value) { if (field != value) { field = value; requestLayout() } }
 
@@ -21,15 +38,17 @@ internal class FoldKeyboardDockHost(context: Context) : FrameLayout(context) {
         for (index in 0 until childCount) {
             val child = getChildAt(index)
             if (child.visibility == View.GONE) continue
-            child.measure(MeasureSpec.makeMeasureSpec(paneWidth, MeasureSpec.EXACTLY), naturalHeightSpec)
-            desiredHeight = maxOf(desiredHeight, child.measuredHeight)
+            val slot = foldLayout.slots.getOrNull(index) ?: continue
+            child.measure(MeasureSpec.makeMeasureSpec(childWidth(slot, paneWidth), MeasureSpec.EXACTLY), naturalHeightSpec)
+            desiredHeight = maxOf(desiredHeight, child.measuredHeight + size(slot).bottomMargin.coerceAtLeast(0))
         }
         setMeasuredDimension(resolveSize(width, widthMeasureSpec), resolveSize(desiredHeight, heightMeasureSpec))
         // Equal pane surfaces keep both candidate strips and keyboard bottoms aligned.
         for (index in 0 until childCount) {
+            val slot = foldLayout.slots.getOrNull(index) ?: continue
             getChildAt(index).takeIf { it.visibility != View.GONE }?.measure(
-                MeasureSpec.makeMeasureSpec(paneWidth, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY))
+                MeasureSpec.makeMeasureSpec(childWidth(slot, paneWidth), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec((measuredHeight - size(slot).bottomMargin.coerceAtLeast(0)).coerceAtLeast(0), MeasureSpec.EXACTLY))
         }
     }
 
@@ -37,7 +56,13 @@ internal class FoldKeyboardDockHost(context: Context) : FrameLayout(context) {
         for (index in 0 until childCount) {
             val child = getChildAt(index)
             val slot = foldLayout.slots.getOrNull(index) ?: continue
-            val x = foldLayout.paneX(slot, width, child.measuredWidth)
+            val paneWidth = foldLayout.paneWidth(width, (280 * resources.displayMetrics.density).roundToInt())
+            val value = size(slot)
+            val spare = (paneWidth - child.measuredWidth).coerceAtLeast(0)
+            val end = value.positionIsEnd != (layoutDirection == View.LAYOUT_DIRECTION_RTL)
+            val margin = (if (value.positionIsEnd) value.marginEnd else value.marginStart).coerceIn(0, spare)
+            val offset = if (end) spare - margin else margin
+            val x = foldLayout.paneX(slot, width, paneWidth) + offset
             child.layout(x, 0, x + child.measuredWidth, child.measuredHeight)
         }
     }

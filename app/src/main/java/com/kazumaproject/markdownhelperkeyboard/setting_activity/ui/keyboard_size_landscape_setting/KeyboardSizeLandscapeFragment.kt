@@ -22,7 +22,7 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.FragmentKeyboardsizeLandscapeBinding
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.adapter.KeyboardViewPagerAdapter
-import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.navigateSafely
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.KeyboardSizeEditorTabs
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
@@ -39,6 +39,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     private var isRightAligned = true
     private var areControlsVisible = true
+    private var editorTabs: KeyboardSizeEditorTabs? = null
+    private var selectedPage = KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION
 
     private val minHeightDp = 100
     private val maxHeightDp = 420
@@ -50,11 +52,18 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentKeyboardsizeLandscapeBinding.inflate(inflater, container, false)
-        return binding.root
+        return KeyboardSizeEditorTabs(this, binding.root, true,
+            isQwerty = { binding.keyboardViewPager.currentItem == KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION },
+            selectQwerty = { qwerty -> binding.keyboardViewPager.setCurrentItem(if (qwerty) KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION else KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION, false) },
+            isRightAligned = { isRightAligned },
+            refreshGui = ::refreshPreview,
+        ).also { editorTabs = it }.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        selectedPage = savedInstanceState?.getInt("selectedPage") ?: selectedPage
+        areControlsVisible = savedInstanceState?.getBoolean("areControlsVisible") ?: areControlsVisible
         setupMenu()
         isRightAligned = appPreference.keyboard_position_landscape ?: true
 
@@ -68,19 +77,23 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         setupMoveHandle()
 
         updateControlsVisibility()
+        editorTabs?.bind(savedInstanceState?.getInt("editorTab") ?: 0)
     }
 
     private fun setupViewPager() {
         val adapter = KeyboardViewPagerAdapter()
         binding.keyboardViewPager.adapter = adapter
         binding.keyboardViewPager.isUserInputEnabled = false
+        binding.keyboardViewPager.setCurrentItem(selectedPage, false)
 
         binding.keyboardViewPager.registerOnPageChangeCallback(object :
             ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
+                selectedPage = position
                 applyCurrentPageDimensions()
                 updateTooltipUI(position)
+                editorTabs?.onGuiFamilyChanged()
 
                 isRightAligned = if (position == KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION) {
                     appPreference.keyboard_position_landscape ?: true
@@ -138,8 +151,10 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         val heightInPx = (heightPref * density).toInt()
         val marginBottomInPx = (marginBottomPref * density).toInt()
 
-        val screenWidth = WindowMetricsCalculator.getOrCreate()
-            .computeCurrentWindowMetrics(requireActivity()).bounds.width()
+        val screenWidth = (binding.keyboardSettingConstraint.width.takeIf { it > 0 }
+            ?: WindowMetricsCalculator.getOrCreate()
+                .computeCurrentWindowMetrics(requireActivity()).bounds.width()) -
+            binding.keyboardSettingConstraint.paddingLeft - binding.keyboardSettingConstraint.paddingRight
 
         val widthInPx = if (widthPref >= 98) {
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -155,11 +170,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         val marginStartPx = (marginStartDpPref * density).toInt()
         val marginEndPx = (marginEndDpPref * density).toInt()
 
-        if (isRightAligned) {
-            layoutParams.marginEnd = marginEndPx
-        } else {
-            layoutParams.marginStart = marginStartPx
-        }
+        layoutParams.marginEnd = if (isRightAligned) marginEndPx else 0
+        layoutParams.marginStart = if (isRightAligned) 0 else marginStartPx
 
         binding.keyboardContainer.layoutParams = layoutParams
 
@@ -193,6 +205,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         menuHost.addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                 menuInflater.inflate(R.menu.menu_keyboard_settings, menu)
+                menu.removeItem(R.id.action_keyboard_size_direct_input)
             }
 
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
@@ -205,13 +218,6 @@ class KeyboardSizeLandscapeFragment : Fragment() {
                     R.id.action_toggle_visibility -> {
                         areControlsVisible = !areControlsVisible
                         updateControlsVisibility()
-                        true
-                    }
-
-                    R.id.action_keyboard_size_direct_input -> {
-                        navigateSafely(
-                            R.id.action_keyboardSizeLandscapeFragment_to_keyboardSizeDirectInputFragment
-                        )
                         true
                     }
 
@@ -237,8 +243,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = event.rawX
-                    initialY = event.rawY
+                    initialX = (event.rawX / (editorTabs?.previewScale ?: 1f))
+                    initialY = (event.rawY / (editorTabs?.previewScale ?: 1f))
                     initialBottomMarginPx = lp.bottomMargin
                     initialMarginStartPx = lp.marginStart
                     initialMarginEndPx = lp.marginEnd
@@ -256,8 +262,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
                     val maxHorizontalMarginPx = (availableWidth - containerWidth).coerceAtLeast(0f)
 
-                    val deltaX = event.rawX - initialX
-                    val deltaY = event.rawY - initialY
+                    val deltaX = (event.rawX / (editorTabs?.previewScale ?: 1f)) - initialX
+                    val deltaY = (event.rawY / (editorTabs?.previewScale ?: 1f)) - initialY
 
                     val newBottomMargin = (initialBottomMarginPx - deltaY).toInt().coerceAtLeast(0)
                     lp.bottomMargin = newBottomMargin
@@ -274,6 +280,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
                     binding.keyboardContainer.layoutParams = lp
                     binding.keyboardContainer.requestLayout()
+                    editorTabs?.onGuiGeometryChanged()
                     true
                 }
 
@@ -319,12 +326,14 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         var initialWidth = 0
 
         val density = resources.displayMetrics.density
-        val screenWidth = WindowMetricsCalculator.getOrCreate()
-            .computeCurrentWindowMetrics(requireActivity()).bounds.width()
+        fun screenWidth() = (binding.keyboardSettingConstraint.width.takeIf { it > 0 }
+            ?: WindowMetricsCalculator.getOrCreate()
+                .computeCurrentWindowMetrics(requireActivity()).bounds.width()) -
+            binding.keyboardSettingConstraint.paddingLeft - binding.keyboardSettingConstraint.paddingRight
 
         val minHeightPx = minHeightDp * density
         val maxHeightPx = maxHeightDp * density
-        val minWidthPx = screenWidth * (minWidthPercent / 100f)
+        fun minWidthPx() = screenWidth() * (minWidthPercent / 100f)
 
         fun saveHeightPreference() {
             val finalHeightDp = (binding.keyboardContainer.height / density).roundToInt()
@@ -362,15 +371,16 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.handleTop.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialY = event.rawY
+                    initialY = (event.rawY / (editorTabs?.previewScale ?: 1f))
                     initialHeight = binding.keyboardContainer.height
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val deltaY = event.rawY - initialY
+                    val deltaY = (event.rawY / (editorTabs?.previewScale ?: 1f)) - initialY
                     val newHeight = (initialHeight - deltaY).coerceIn(minHeightPx, maxHeightPx)
                     binding.keyboardContainer.layoutParams.height = newHeight.toInt()
                     binding.keyboardContainer.requestLayout()
+                    editorTabs?.onGuiGeometryChanged()
                 }
 
                 MotionEvent.ACTION_UP -> saveHeightPreference()
@@ -381,15 +391,16 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.handleBottom.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialY = event.rawY
+                    initialY = (event.rawY / (editorTabs?.previewScale ?: 1f))
                     initialHeight = binding.keyboardContainer.height
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val deltaY = event.rawY - initialY
+                    val deltaY = (event.rawY / (editorTabs?.previewScale ?: 1f)) - initialY
                     val newHeight = (initialHeight + deltaY).coerceIn(minHeightPx, maxHeightPx)
                     binding.keyboardContainer.layoutParams.height = newHeight.toInt()
                     binding.keyboardContainer.requestLayout()
+                    editorTabs?.onGuiGeometryChanged()
                 }
 
                 MotionEvent.ACTION_UP -> saveHeightPreference()
@@ -400,16 +411,17 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.handleLeft.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = event.rawX
+                    initialX = (event.rawX / (editorTabs?.previewScale ?: 1f))
                     initialWidth = binding.keyboardContainer.width
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val deltaX = event.rawX - initialX
+                    val deltaX = (event.rawX / (editorTabs?.previewScale ?: 1f)) - initialX
                     val newWidth =
-                        (initialWidth - deltaX).coerceIn(minWidthPx, screenWidth.toFloat())
+                        (initialWidth - deltaX).coerceIn(minWidthPx(), screenWidth().toFloat())
                     binding.keyboardContainer.layoutParams.width = newWidth.toInt()
                     binding.keyboardContainer.requestLayout()
+                    editorTabs?.onGuiGeometryChanged()
                 }
 
                 MotionEvent.ACTION_UP -> saveWidthPreference()
@@ -420,16 +432,17 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.handleRight.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = event.rawX
+                    initialX = (event.rawX / (editorTabs?.previewScale ?: 1f))
                     initialWidth = binding.keyboardContainer.width
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val deltaX = event.rawX - initialX
+                    val deltaX = (event.rawX / (editorTabs?.previewScale ?: 1f)) - initialX
                     val newWidth =
-                        (initialWidth + deltaX).coerceIn(minWidthPx, screenWidth.toFloat())
+                        (initialWidth + deltaX).coerceIn(minWidthPx(), screenWidth().toFloat())
                     binding.keyboardContainer.layoutParams.width = newWidth.toInt()
                     binding.keyboardContainer.requestLayout()
+                    editorTabs?.onGuiGeometryChanged()
                 }
 
                 MotionEvent.ACTION_UP -> saveWidthPreference()
@@ -441,7 +454,13 @@ class KeyboardSizeLandscapeFragment : Fragment() {
     private fun setupKeyboardPositionButton() {
         binding.keyboardPositionButton.setOnClickListener {
             isRightAligned = !isRightAligned
+            if (binding.keyboardViewPager.currentItem == KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION) {
+                appPreference.keyboard_position_landscape = isRightAligned
+            } else {
+                appPreference.qwerty_keyboard_position_landscape = isRightAligned
+            }
             updateKeyboardAlignment()
+            editorTabs?.onGuiGeometryChanged()
         }
     }
 
@@ -469,16 +488,12 @@ class KeyboardSizeLandscapeFragment : Fragment() {
             }
             applyCurrentPageDimensions()
             updateKeyboardAlignment()
+            editorTabs?.reloadValues()
         }
     }
 
     private fun updateKeyboardAlignment() {
         val currentPage = binding.keyboardViewPager.currentItem
-        if (currentPage == KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION) {
-            appPreference.keyboard_position_landscape = isRightAligned
-        } else {
-            appPreference.qwerty_keyboard_position_landscape = isRightAligned
-        }
 
         val constraintLayout = binding.keyboardSettingConstraint
         val constraintSet = ConstraintSet()
@@ -504,9 +519,9 @@ class KeyboardSizeLandscapeFragment : Fragment() {
             } else {
                 appPreference.qwerty_keyboard_margin_end_dp_landscape ?: 0
             }
-            val lp = binding.keyboardContainer.layoutParams as ConstraintLayout.LayoutParams
-            lp.marginEnd = (endDp * resources.displayMetrics.density).toInt()
-            binding.keyboardContainer.layoutParams = lp
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.END,
+                (endDp * resources.displayMetrics.density).toInt())
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.START, 0)
 
         } else {
             constraintSet.connect(
@@ -531,9 +546,9 @@ class KeyboardSizeLandscapeFragment : Fragment() {
             } else {
                 appPreference.qwerty_keyboard_margin_start_dp_landscape ?: 0
             }
-            val lp = binding.keyboardContainer.layoutParams as ConstraintLayout.LayoutParams
-            lp.marginStart = (startDp * resources.displayMetrics.density).toInt()
-            binding.keyboardContainer.layoutParams = lp
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.START,
+                (startDp * resources.displayMetrics.density).toInt())
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.END, 0)
         }
 
         constraintSet.applyTo(constraintLayout)
@@ -565,8 +580,37 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.qwertyTooltipButton.visibility = visibility
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshPreview()
+    }
+
+    fun onFoldPostureChanged() {
+        editorTabs?.onPostureChanged()
+        if (_binding != null) refreshPreview()
+    }
+
+    private fun refreshPreview() {
+        binding.keyboardSettingConstraint.post {
+            if (_binding == null) return@post
+            applyCurrentPageDimensions()
+            updateKeyboardAlignment()
+            editorTabs?.applyDraft()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("editorTab", editorTabs?.selectedTab ?: 0)
+        outState.putInt("selectedPage", selectedPage)
+        outState.putBoolean("areControlsVisible", areControlsVisible)
+    }
+
     override fun onDestroyView() {
+        selectedPage = binding.keyboardViewPager.currentItem
         super.onDestroyView()
+        editorTabs?.dispose()
+        editorTabs = null
         _binding = null
     }
 }
