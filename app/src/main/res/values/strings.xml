@@ -1832,4 +1832,7 @@
     <string name="sumire_panel_width">Width: %1$d%%</string>
     <string name="sumire_panel_height">Height: %1$d%%</string>
     <string name="sumire_panel_offset">Edge offset: %1$d%%</string>
+    <string name="keyboard_size_gui_tab">GUI</string>
+    <string name="keyboard_size_numeric_tab">Numeric</string>
+    <string name="keyboard_size_tenkey_family_short">TenKey / Sumire</string>
 </resources>

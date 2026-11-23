@@ -7,6 +7,11 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizePreferenceAccessor
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeOrientation
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeKeyboardType
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeValues
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -379,6 +384,67 @@ class FoldKeyboardLayoutTest {
             controller.stop()
             activity.finish()
         }
+    }
+
+    @Test fun sizingPersistsAcrossRotationAndReopenForBothPaneSelections() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(activity)
+        prefs.edit().clear().commit()
+        val appPreference = AppPreference
+        appPreference.init(activity)
+        val accessor = KeyboardSizePreferenceAccessor(appPreference)
+        val portrait = KeyboardSizeOrientation.Portrait
+        val landscape = KeyboardSizeOrientation.Landscape
+        val tenkey = KeyboardSizeKeyboardType.TenKey
+        val qwerty = KeyboardSizeKeyboardType.Qwerty
+        val closed = KeyboardSizeValues(220, 95, 0, 0, 0)
+        accessor.save(portrait, tenkey, closed)
+        try {
+            for (orientation in listOf(portrait, landscape)) {
+                accessor.save(orientation, tenkey, closed.copy(heightDp = 260, widthPercent = 80, bottomMarginDp = 20, marginEndDp = 12), true)
+                accessor.save(orientation, qwerty, closed.copy(heightDp = 180, widthPercent = 60, bottomMarginDp = 10, marginEndDp = 8), true)
+            }
+            // Recreate the actual dock/controller with persisted settings, switching which
+            // pane uses QWERTY to cover MAIN and SUB independently of input ownership.
+            for (orientation in listOf(portrait, landscape, portrait)) {
+                for (qwertySlot in SplitSlot.entries) {
+                    fun values(slot: SplitSlot) = accessor.load(orientation, if (slot == qwertySlot) qwerty else tenkey, true)
+                    val host = FoldKeyboardDockHost(activity) { slot ->
+                        values(slot).let { FoldPanePlacement(it.widthPercent, it.bottomMarginDp, true, it.marginStartDp, it.marginEndDp) }
+                    }
+                    activity.setContentView(host)
+                    val controller = SplitKeyboardController(activity, host, {}, {}, {}, foldLayout = FoldKeyboardLayout.SPLIT,
+                        foldBodyHeight = { values(it).heightDp }, foldCandidateHeight = { 50 })
+                    val bodies = SplitSlot.entries.associateWith { View(activity) }
+                    bodies.forEach { (slot, body) -> controller.add(slot, body, RecyclerView(activity), 160) }
+                    try {
+                        controller.start()
+                        val width = if (orientation == landscape) 1200 else 800
+                        host.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.AT_MOST))
+                        host.layout(0, 0, width, host.measuredHeight)
+                        for (slot in SplitSlot.entries) {
+                            val value = values(slot)
+                            val pane = host.getChildAt(slot.ordinal)
+                            assertEquals(width / 2 * value.widthPercent / 100, pane.width)
+                            val origin = if (slot == SplitSlot.SUB) width / 2 else 0
+                            assertEquals(origin + width / 2 - pane.width - value.marginEndDp, pane.left)
+                            assertEquals(host.height - value.bottomMarginDp, pane.bottom)
+                            assertEquals(value.heightDp, (bodies.getValue(slot).parent as View).height)
+                        }
+                        // A subsequent resize uses the same saved settings on each pane.
+                        accessor.save(orientation, qwerty, values(qwertySlot).copy(widthPercent = 50, heightDp = 210), true)
+                        controller.refresh()
+                        host.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.AT_MOST))
+                        host.layout(0, 0, width, host.measuredHeight)
+                        assertEquals(width / 4, host.getChildAt(qwertySlot.ordinal).width)
+                        assertEquals(210, (bodies.getValue(qwertySlot).parent as View).height)
+                    } finally { controller.stop() }
+                }
+            }
+            assertEquals(closed, accessor.load(portrait, tenkey))
+        } finally { prefs.edit().clear().commit(); activity.finish() }
     }
 
 }

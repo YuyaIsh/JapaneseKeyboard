@@ -36,9 +36,16 @@ object KeyboardLayoutState {
             publishPostureSnapshot(false, onPostureChanged)
             return null
         }
+        var lastDelivered: Boolean? = null
+        fun deliver(next: Boolean) {
+            publishPosture(next)
+            if (lastDelivered == next) return
+            lastDelivered = next
+            onPostureChanged(next)
+        }
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                publishPosture(isUnfoldedHingeAngle(event.values.firstOrNull()), onPostureChanged)
+                deliver(isUnfoldedHingeAngle(event.values.firstOrNull()))
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
@@ -47,7 +54,7 @@ object KeyboardLayoutState {
             return null
         }
         // Deliver the last known posture immediately; registration never resets shared state.
-        onPostureChanged(unfolded)
+        deliver(unfolded)
         return listener
     }
 

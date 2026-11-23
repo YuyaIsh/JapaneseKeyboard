@@ -170,7 +170,18 @@ object SettingDestinations {
                 summary = context.getString(R.string.keyboard_screen_preference_summary),
                 category = SettingCategory.FREQUENT,
                 keywords = listOf("size", "height", "width", "keyboard"),
-                destinationId = R.id.keyboardSizeDirectInputFragment,
+                destinationId = R.id.keyboardSettingFragment,
+                iconRes = CoreR.drawable.keyboard_24px,
+            )
+        )
+        add(
+            destination(
+                key = "keyboard_screen_landscape_preference",
+                title = context.getString(R.string.keyboard_size_landscape_setting_fragment_title),
+                summary = context.getString(R.string.keyboard_screen_landscape_preference_summary),
+                category = SettingCategory.FREQUENT,
+                keywords = listOf("landscape", "size", "height", "width", "keyboard"),
+                destinationId = R.id.keyboardSizeLandscapeFragment,
                 iconRes = CoreR.drawable.keyboard_24px,
             )
         )
@@ -795,13 +806,13 @@ object SettingDestinations {
             "candidate_tab_order_preference" -> R.id.candidateTabOrderFragment
             "keyboard_selection_preference" -> R.id.keyboardSelectionFragment
             "keyboard_key_letter_size_fragment_preference" -> R.id.keyCandidateLetterSizeFragment
-            "keyboard_screen_landscape_preference" -> R.id.keyboardSizeDirectInputFragment
+            "keyboard_screen_landscape_preference" -> R.id.keyboardSizeLandscapeFragment
             "candidate_view_height_setting_fragment_preference" -> R.id.candidateViewHeightSettingFragment
             "candidate_view_height_landscape_setting_fragment_preference" -> R.id.candidateHeightLandscapeSettingFragment
             "clipboard_history_preference_fragment" -> R.id.clipboardHistoryFragment
             "delete_key_flick_left_targets_preference" -> R.id.deleteKeyFlickTargetsFragment
             "cursor_move_after_commit_target_pairs_preference" -> R.id.cursorMoveTargetPairsFragment
-            "keyboard_screen_preference" -> R.id.keyboardSizeDirectInputFragment
+            "keyboard_screen_preference" -> R.id.keyboardSettingFragment
             "preference_open_source" -> R.id.openSourceFragment
             "system_user_dictionary_builder_preference" -> R.id.systemUserDictionaryBuilderFragment
             "external_dictionary_settings_preference" -> R.id.externalDictionarySettingsFragment
