@@ -19,6 +19,7 @@ import androidx.preference.PreferenceManager
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import com.google.android.material.textfield.TextInputEditText
@@ -37,6 +38,11 @@ class KeyboardSizeDirectInputFragment : Fragment() {
 
     private var _binding: FragmentKeyboardSizeDirectInputBinding? = null
     private val binding get() = _binding!!
+
+    var onPreviewValuesChanged: ((KeyboardSizeValues) -> Unit)? = null
+    var onKeyboardTypeChanged: ((Boolean) -> Unit)? = null
+    var onValuesSaved: (() -> Unit)? = null
+    private var updatingValues = false
 
     private var unfolded = false
     private var postureSpinner: Spinner? = null
@@ -65,6 +71,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         if (!embeddedEditor) setupMenu()
         setupSelectionGroups(savedInstanceState)
         setupButtons()
+        setupLivePreview()
         loadSelectedValues()
     }
 
@@ -217,6 +224,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         binding.keyboardTypeToggleGroup.addOnButtonCheckedListener { _, _, isChecked ->
             if (isChecked) {
                 qwertySelection = isQwertySelected()
+                onKeyboardTypeChanged?.invoke(isQwertySelected())
                 loadSelectedValues()
             }
         }
@@ -236,6 +244,39 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         if (_binding != null) loadSelectedValues()
     }
 
+    private fun setupLivePreview() {
+        listOf(binding.heightEditText, binding.widthEditText, binding.bottomMarginEditText,
+            binding.marginStartEditText, binding.marginEndEditText).forEach { field ->
+            field.doAfterTextChanged {
+                if (!updatingValues) currentPreviewValues()?.let { values ->
+                    onPreviewValuesChanged?.invoke(values)
+                }
+            }
+        }
+    }
+
+    /** Complete valid drafts affect only the shared preview, never preferences. */
+    fun currentPreviewValues(): KeyboardSizeValues? = _binding?.let {
+        parsePreviewValues(it.heightEditText.text?.toString(), it.widthEditText.text?.toString(),
+            it.bottomMarginEditText.text?.toString(), it.marginStartEditText.text?.toString(),
+            it.marginEndEditText.text?.toString())
+    }
+
+    fun showPreviewValues(values: KeyboardSizeValues) {
+        if (_binding == null) return
+        updatingValues = true
+        try {
+            binding.heightEditText.setText(values.heightDp.toString())
+            binding.widthEditText.setText(values.widthPercent.toString())
+            binding.bottomMarginEditText.setText(values.bottomMarginDp.toString())
+            binding.marginStartEditText.setText(values.marginStartDp.toString())
+            binding.marginEndEditText.setText(values.marginEndDp.toString())
+        } finally {
+            updatingValues = false
+        }
+        currentPreviewValues()?.let { onPreviewValuesChanged?.invoke(it) }
+    }
+
     private fun setupButtons() {
         binding.saveButton.setOnClickListener {
             saveSelectedValues()
@@ -243,6 +284,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         binding.resetButton.setOnClickListener {
             preferenceAccessor.reset(selectedOrientation(), selectedKeyboardType(), unfolded)
             loadSelectedValues()
+            onValuesSaved?.invoke()
             Toast.makeText(
                 requireContext(),
                 R.string.keyboard_size_direct_input_reset_to_default,
@@ -255,11 +297,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         refreshPanelControls()
         clearErrors()
         val values = preferenceAccessor.load(selectedOrientation(), selectedKeyboardType(), unfolded)
-        binding.heightEditText.setText(values.heightDp.toString())
-        binding.widthEditText.setText(values.widthPercent.toString())
-        binding.bottomMarginEditText.setText(values.bottomMarginDp.toString())
-        binding.marginStartEditText.setText(values.marginStartDp.toString())
-        binding.marginEndEditText.setText(values.marginEndDp.toString())
+        showPreviewValues(values)
     }
 
     private fun saveSelectedValues() {
@@ -274,6 +312,7 @@ class KeyboardSizeDirectInputFragment : Fragment() {
 
         preferenceAccessor.save(selectedOrientation(), selectedKeyboardType(), values, unfolded)
         loadSelectedValues()
+        onValuesSaved?.invoke()
         Toast.makeText(requireContext(), R.string.saved, Toast.LENGTH_SHORT).show()
     }
 
@@ -294,13 +333,14 @@ class KeyboardSizeDirectInputFragment : Fragment() {
             return null
         }
 
-        return KeyboardSizeValues(
-            heightDp = height,
-            widthPercent = width,
-            bottomMarginDp = bottomMargin,
-            marginStartDp = marginStart,
-            marginEndDp = marginEnd,
-        )
+        if (height !in KeyboardSizePreferenceAccessor.MinHeightDp..KeyboardSizePreferenceAccessor.MaxHeightDp)
+            binding.heightInputLayout.error = getString(R.string.keyboard_size_direct_input_invalid_value)
+        if (width !in KeyboardSizePreferenceAccessor.MinWidthPercent..KeyboardSizePreferenceAccessor.MaxWidthPercent)
+            binding.widthInputLayout.error = getString(R.string.keyboard_size_direct_input_invalid_value)
+        if (bottomMargin < 0) binding.bottomMarginInputLayout.error = getString(R.string.keyboard_size_direct_input_invalid_value)
+        if (marginStart < 0) binding.marginStartInputLayout.error = getString(R.string.keyboard_size_direct_input_invalid_value)
+        if (marginEnd < 0) binding.marginEndInputLayout.error = getString(R.string.keyboard_size_direct_input_invalid_value)
+        return currentPreviewValues()
     }
 
     private fun readRequiredInt(
@@ -339,11 +379,26 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     override fun onDestroyView() {
         qwertySelection = isQwertySelected()
         postureSpinner = null
+        onPreviewValuesChanged = null
+        onKeyboardTypeChanged = null
+        onValuesSaved = null
         super.onDestroyView()
         _binding = null
     }
 
     companion object {
+        internal fun parsePreviewValues(height: String?, width: String?, bottom: String?, start: String?, end: String?): KeyboardSizeValues? {
+            val h = height?.trim()?.toIntOrNull() ?: return null
+            val w = width?.trim()?.toIntOrNull() ?: return null
+            val b = bottom?.trim()?.toIntOrNull() ?: return null
+            val s = start?.trim()?.toIntOrNull() ?: return null
+            val e = end?.trim()?.toIntOrNull() ?: return null
+            if (h !in KeyboardSizePreferenceAccessor.MinHeightDp..KeyboardSizePreferenceAccessor.MaxHeightDp ||
+                w !in KeyboardSizePreferenceAccessor.MinWidthPercent..KeyboardSizePreferenceAccessor.MaxWidthPercent ||
+                b < 0 || s < 0 || e < 0) return null
+            return KeyboardSizeValues(h, w, b, s, e)
+        }
+
         private const val InitialOrientationArgument = "initialOrientation"
         private const val InitialOrientationLandscape = "landscape"
     }
