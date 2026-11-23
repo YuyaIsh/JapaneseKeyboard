@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.KeyboardSizePreviewViewportTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-23T06:07:37" hostname="ubuntu-dev" time="0.071">
+  <properties/>
+  <testcase name="changingDraftDimensionsKeepsOnePreviewAndShowsHeightChangesAtStableScale" classname="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.KeyboardSizePreviewViewportTest" time="0.071"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

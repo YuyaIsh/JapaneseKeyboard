@@ -1,0 +1,15 @@
+Warning: Activity not started, intent has been delivered to currently running top-most instance.
+GUI [273, 563, 1732, 986]
+/tmp/sumire-live-evidence/live-open-gui.png
+NUMERIC [273, 563, 1732, 986]
+/tmp/sumire-live-evidence/live-open-numeric-before.png
+LIVE DRAFT [876, 451, 1740, 829]
+/tmp/sumire-live-evidence/live-open-numeric-unsaved.png
+/tmp/sumire-live-evidence/live-open-gui-unsaved.png
+PASS one preview remains visible in Numeric and GUI; unsaved300dp/50% draft survives tab switches; no preference writes
+PASS explicit Save300/50
+PASS Reset220/100 with preview
+PASS GUI drag -> Numeric 96
+PASS QWERTY controls and shared preview
+PASS CLOSED compact QWERTY preview [46, 685, 753, 1002]
+/tmp/sumire-live-evidence/live-closed-compact-numeric.png

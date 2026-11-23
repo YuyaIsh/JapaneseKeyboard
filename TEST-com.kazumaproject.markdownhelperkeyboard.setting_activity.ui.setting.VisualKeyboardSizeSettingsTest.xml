@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.VisualKeyboardSizeSettingsTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-23T06:07:37" hostname="ubuntu-dev" time="0.903">
+  <properties/>
+  <testcase name="visualEditorPreferencesPersistSeparatelyForPostureAndOrientation" classname="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.VisualKeyboardSizeSettingsTest" time="0.464"/>
+  <testcase name="frequentSizeSettingsOpenHistoricalVisualEditors" classname="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.VisualKeyboardSizeSettingsTest" time="0.291"/>
+  <testcase name="asymmetricSumirePanelPreferencesRemainIndependentOfOuterKeyboardSizing" classname="com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.VisualKeyboardSizeSettingsTest" time="0.148"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

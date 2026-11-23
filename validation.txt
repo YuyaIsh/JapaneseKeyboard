@@ -1,16 +1,12 @@
-Source HEAD: 9ee402311c6e9fd8d45136c989955fbea2f38334
-APK SHA256: a57f8eab91966e7abd7f851a499a6b72f5f101c033ec8555ada3e9d97e1fd04a
+HEAD 6425a74d8f38975a13fd6e8dbb052a6f02f336d0
+APK SHA256 f6bbc34759cc7947576720433d2a63a14b8eacaf9d815372d2dbd8e67d74bc26
+Build :app:assembleLiteStandardDebug PASS.
+7 focused tests PASS: live draft parsing2, anchored preview viewport1, editor layouts1, existing settings3. No failures/errors/skips.
 
-Final APK and focused checks PASS:
-./gradlew :app:assembleLiteStandardDebug :app:testLiteStandardDebugUnitTest --tests '*VisualKeyboardSizeSettingsTest' --tests '*KeyboardHingeObserversTest' --tests '*KeyboardLayoutStateTest'
-8 tests pass (3 + 1 + 4), no failures/errors/skips.
-./gradlew :app:testLiteStandardDebugUnitTest --tests '*KeyboardSizeEditorLayoutTest'
-1 layout regression test pass, checks visible separate alignment/reset targets in BOTH historical visual editor layouts at 400x700dp.
-
-Android 35 SumireFoldWindows emulator, native viewport 1768x2208 at 420dpi.
-Screenshots were individually inspected after final APK installation. GUI alignment/reset buttons, family selection and drag handles are visible; all numeric fields and Save/Reset are visible without scrolling in these captures.
-OPENED GUI/Numeric: existing values260dp/85%; numeric Save275dp/80% reflected in GUI, then actual drag reduced width to75%; Numeric showed275dp/75%. These values remained after final APK update (both OPENED screenshots show retained values).
-CLOSED sensor posture: Numeric loaded separate225dp/90% values (shown in screenshot); Save230dp/92% and actual GUI height drag persisted, while OPENED275dp/75% remained unchanged. Unfolding reloaded275dp/75%.
-QWERTY210dp/65% and selected Numeric tab survived portrait-landscape rotation; returning to GUI showed qwerty keys.
-CLOSED capture uses the emulator's unchanged native viewport with CLOSED hinge posture, not a verified narrow outer-display geometry. No separate outer-display layout claim is made.
-Earlier PR limitation still applies: actual rendered MAIN/SUB IME integration was not visually verified. This follow-up changes only size-editor UI; split geometry/input routing are unchanged.
+Actual Android35 Fold emulator,420dpi:
+OPENED1768x2208: GUI and Numeric each contain exactly one visible keyboard_container. Before edit: preview bounds273,563..1732,986 (width1459px), numeric260dp/85%.
+Before pressing Save: entered300dp/50%, preview immediately narrowed to876,451..1740,829 (width864px). Software Gboard number keyboard visible; preview stayed anchored above controls. before-live and after-live preference maps match, retaining260dp/85%.
+Switching lower-control tabs retained300dp/50% and the shared preview. Explicit Save persisted300dp/50%. Reset restored220dp/100%. GUI drag then persisted96% and Numeric showed96%. QWERTY selection changed both controls and preview (210dp/65%).
+CLOSED hinge plus wm size884x2208: QWERTY selection retained; Numeric loaded CLOSED195dp/85%; visible QWERTY preview bounds46,685..753,1002. Narrow screenshot inspected: preview, five fields, Save/Reset visible without overlap.
+All published screenshots individually inspected. No latest-APK landscape UI pass was performed; both editor XML layouts and preview shrinking to120px are covered by focused tests.
+Earlier actual MAIN/SUB IME rendering integration remains unverified; this correction does not change split geometry/input routing.
