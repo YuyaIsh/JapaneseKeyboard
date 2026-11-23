@@ -460,7 +460,7 @@ private fun previewKeyboardLayoutConfig(
     }
 }
 
-private fun configureTenKeyPreview(
+internal fun configureTenKeyPreview(
     context: Context,
     appPreference: AppPreference,
     tenKey: TenKey
@@ -519,7 +519,7 @@ private fun configureTenKeyPreview(
     tenKey.setOnTouchListener { _, _ -> true }
 }
 
-private fun configureGojuonPreview(
+internal fun configureGojuonPreview(
     context: Context,
     appPreference: AppPreference,
     gojuon: GojuonKeyboardView,
@@ -556,7 +556,7 @@ private fun configureGojuonPreview(
     gojuon.resetLayout()
 }
 
-private fun configureQwertyPreview(
+internal fun configureQwertyPreview(
     context: Context,
     appPreference: AppPreference,
     qwertyView: QWERTYKeyboardView,
@@ -634,7 +634,7 @@ private fun configureQwertyPreview(
     qwertyView.setOnTouchListener { _, _ -> true }
 }
 
-private fun configureFlickKeyboardPreview(
+internal fun configureFlickKeyboardPreview(
     context: Context,
     appPreference: AppPreference,
     flickView: FlickKeyboardView,
@@ -760,7 +760,7 @@ private suspend fun loadPreviewCustomKeyboardLayout(
     )
 }
 
-private fun createPreviewSumireKeyboardLayout(
+internal fun createPreviewSumireKeyboardLayout(
     context: Context,
     appPreference: AppPreference,
     inputMode: KeyboardInputMode,
@@ -801,7 +801,7 @@ private fun createPreviewSumireKeyboardLayout(
     )
 }
 
-private fun applyDeleteKeyFlickPreferences(
+internal fun applyDeleteKeyFlickPreferences(
     appPreference: AppPreference,
     layout: KeyboardLayout
 ): KeyboardLayout {

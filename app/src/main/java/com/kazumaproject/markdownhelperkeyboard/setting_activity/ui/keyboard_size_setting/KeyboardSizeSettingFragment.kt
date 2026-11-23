@@ -34,6 +34,9 @@ class KeyboardSettingFragment : Fragment() {
     @Inject
     lateinit var appPreference: AppPreference
 
+    @Inject lateinit var keyboardRepository: com.kazumaproject.markdownhelperkeyboard.repository.KeyboardRepository
+    @Inject lateinit var sumireSpecialKeyRepository: com.kazumaproject.markdownhelperkeyboard.sumire_special_key.SumireSpecialKeyRepository
+
     private var _binding: FragmentKeyboardSettingBinding? = null
     private val binding get() = _binding!!
 
@@ -57,6 +60,9 @@ class KeyboardSettingFragment : Fragment() {
             selectQwerty = { qwerty -> binding.keyboardViewPager.setCurrentItem(if (qwerty) KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION else KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION, false) },
             isRightAligned = { isRightAligned },
             refreshGui = ::refreshPreview,
+            appPreference = appPreference,
+            keyboardRepository = keyboardRepository,
+            sumireSpecialKeyRepository = sumireSpecialKeyRepository,
         ).also { editorTabs = it }.root
     }
 

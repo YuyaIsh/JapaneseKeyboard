@@ -1,0 +1,130 @@
+Captured on Windows host Training152 / Android 35, emulator-5554.
+APK source: 3d5e2536 (before the measurement optimization).
+
+Subject: Input dispatching timed out (9ec038e com.kazumaproject.markdownhelperkeyboard.lite.dev/com.kazumaproject.markdownhelperkeyboard.setting_activity.MainActivity (server) is not responding. Waited 5004ms for MotionEvent(deviceId=-1, eventTime=285378945000000, source=TOUCHSCREEN, displayId=0, action=DOWN, actionButton=0x00000000, flags=0x00000000, metaState=0x00000000, buttonState=0x00000000, classification=NONE, edgeFlags=0x00000000, xPrecision=1.0, yPrecision=1.0, xCursorPosition=nan, yCursorPosition=nan, pointers=[0: (189.4, 910.6)]), policyFlags=0x6b000000).
+RssHwmKb: 224140
+RssKb: 224140
+RssAnonKb: 119212
+RssShmemKb: 18560
+VmSwapKb: 0
+
+
+"main" prio=5 tid=1 Runnable
+  | group="main" sCount=1 ucsCount=0 flags=9 obj=0x7320cd68 self=0x702060ec7be0
+  | sysTid=2311 nice=-10 cgrp=top-app sched=0/0 handle=0x70216f210d18
+  | state=R schedstat=( 18380804802 55801671675 2517 ) utm=138 stm=1699 core=1 HZ=100
+  | stack=0x7ffefc7dd000-0x7ffefc7df000 stackSize=8188KB
+  | held mutexes= "mutator lock"(shared held)
+  at androidx.constraintlayout.core.ArrayLinkedVariables.getVariable(ArrayLinkedVariables.java:601)
+  at androidx.constraintlayout.core.ArrayLinkedVariables.use(ArrayLinkedVariables.java:367)
+  at androidx.constraintlayout.core.ArrayRow.updateFromRow(ArrayRow.java:618)
+  at androidx.constraintlayout.core.ArrayRow.updateFromSystem(ArrayRow.java:799)
+  at androidx.constraintlayout.core.LinearSystem.addConstraint(LinearSystem.java:596)
+  at androidx.constraintlayout.core.LinearSystem.addCentering(LinearSystem.java:1345)
+  at androidx.constraintlayout.core.widgets.Chain.applyChainConstraints(Chain.java:382)
+  at androidx.constraintlayout.core.widgets.Chain.applyChainConstraints(Chain.java:73)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.addChildrenToSolver(ConstraintWidgetContainer.java:442)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.layout(ConstraintWidgetContainer.java:857)
+  at androidx.constraintlayout.core.widgets.analyzer.BasicMeasure.solveLinearSystem(BasicMeasure.java:170)
+  at androidx.constraintlayout.core.widgets.analyzer.BasicMeasure.solverMeasure(BasicMeasure.java:298)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.measure(ConstraintWidgetContainer.java:119)
+  at androidx.constraintlayout.widget.ConstraintLayout.resolveSystem(ConstraintLayout.java:1634)
+  at androidx.constraintlayout.widget.ConstraintLayout.onMeasure(ConstraintLayout.java:1777)
+  at android.view.View.measure(View.java:28114)
+  at com.kazumaproject.markdownhelperkeyboard.ime_service.split_keyboard.SplitKeyboardBody.onMeasure(SplitKeyboardBody.kt:37)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.LinearLayout.measureChildBeforeLayout(LinearLayout.java:1608)
+  at android.widget.LinearLayout.measureVertical(LinearLayout.java:878)
+  at android.widget.LinearLayout.onMeasure(LinearLayout.java:721)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at com.kazumaproject.markdownhelperkeyboard.ime_service.split_keyboard.FoldKeyboardDockHost.onMeasure(FoldKeyboardDockHost.kt:49)
+  at android.view.View.measure(View.java:28114)
+  at com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.FoldSizingPreview$view$1.onMeasure(FoldSizingPreview.kt:77)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.LinearLayout.measureChildBeforeLayout(LinearLayout.java:1608)
+  at android.widget.LinearLayout.measureVertical(LinearLayout.java:878)
+  at android.widget.LinearLayout.onMeasure(LinearLayout.java:721)
+  at com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.KeyboardSizeEditorTabs$4.onMeasure(KeyboardSizeEditorTabs.kt:104)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at androidx.constraintlayout.widget.ConstraintLayout$Measurer.measure(ConstraintLayout.java:861)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.measure(ConstraintWidgetContainer.java:646)
+  at androidx.constraintlayout.core.widgets.analyzer.Direct.verticalSolvingPass(Direct.java:486)
+  at androidx.constraintlayout.core.widgets.analyzer.Direct.solveVerticalMatchConstraint(Direct.java:805)
+  at androidx.constraintlayout.core.widgets.analyzer.Direct.verticalSolvingPass(Direct.java:549)
+  at androidx.constraintlayout.core.widgets.analyzer.Direct.verticalSolvingPass(Direct.java:592)
+  at androidx.constraintlayout.core.widgets.analyzer.Direct.solvingPass(Direct.java:230)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.layout(ConstraintWidgetContainer.java:711)
+  at androidx.constraintlayout.core.widgets.analyzer.BasicMeasure.solveLinearSystem(BasicMeasure.java:170)
+  at androidx.constraintlayout.core.widgets.analyzer.BasicMeasure.solverMeasure(BasicMeasure.java:298)
+  at androidx.constraintlayout.core.widgets.ConstraintWidgetContainer.measure(ConstraintWidgetContainer.java:119)
+  at androidx.constraintlayout.widget.ConstraintLayout.resolveSystem(ConstraintLayout.java:1634)
+  at androidx.constraintlayout.widget.ConstraintLayout.onMeasure(ConstraintLayout.java:1777)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at androidx.appcompat.widget.ContentFrameLayout.onMeasure(ContentFrameLayout.java:141)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at androidx.appcompat.widget.ActionBarOverlayLayout.onMeasure(ActionBarOverlayLayout.java:513)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.LinearLayout.measureChildBeforeLayout(LinearLayout.java:1608)
+  at android.widget.LinearLayout.measureVertical(LinearLayout.java:878)
+  at android.widget.LinearLayout.onMeasure(LinearLayout.java:721)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewGroup.measureChildWithMargins(ViewGroup.java:6989)
+  at android.widget.FrameLayout.onMeasure(FrameLayout.java:194)
+  at com.android.internal.policy.DecorView.onMeasure(DecorView.java:719)
+  at android.view.View.measure(View.java:28114)
+  at android.view.ViewRootImpl.performMeasure(ViewRootImpl.java:4823)
+  at android.view.ViewRootImpl.measureHierarchy(ViewRootImpl.java:3220)
+  at android.view.ViewRootImpl.performTraversals(ViewRootImpl.java:3525)
+  at android.view.ViewRootImpl.doTraversal(ViewRootImpl.java:2917)
+  at android.view.ViewRootImpl$TraversalRunnable.run(ViewRootImpl.java:10324)
+  at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1406)
+  at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1415)
+  at android.view.Choreographer.doCallbacks(Choreographer.java:1015)
+  at android.view.Choreographer.doFrame(Choreographer.java:945)
+  at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1389)
+  at android.os.Handler.handleCallback(Handler.java:959)
+  at android.os.Handler.dispatchMessage(Handler.java:100)
+  at android.os.Looper.loopOnce(Looper.java:232)
+  at android.os.Looper.loop(Looper.java:317)
+  at android.app.ActivityThread.main(ActivityThread.java:8705)
+  at java.lang.reflect.Method.invoke(Native method)
+  at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:580)
+  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:886)
+DumpLatencyMs: 350.542
+
+
+Relevant ActivityManager CPU report at 2026-11-23 09:38:00 UTC:
+Load: 21.57 / 17.63 / 11.39
+CPU pressure some avg10=99.24, avg60=93.02.
+98% TOTAL: 7% user + 82% kernel + 8.9% softirq.
+Sensors HAL: 43%; app: 34%. App JIT thread: 26%; main thread: 13% in second interval.
+
+The sampled main thread is in the real keyboard ConstraintLayout solver via
+FoldSizingPreview -> FoldKeyboardDockHost -> SplitKeyboardBody. No recursive
+layout loop is demonstrated. Cold class verification and severe scheduling
+pressure also occurred. The ANR is a blocker until the final APK is rechecked;
+the stack and screenshot do not establish that the optimization resolves it.

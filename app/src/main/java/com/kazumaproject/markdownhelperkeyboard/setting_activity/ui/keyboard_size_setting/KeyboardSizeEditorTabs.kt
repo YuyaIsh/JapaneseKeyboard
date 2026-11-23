@@ -20,6 +20,12 @@ import com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutS
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeValues
 import kotlin.math.roundToInt
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
+import com.kazumaproject.markdownhelperkeyboard.repository.KeyboardRepository
+import com.kazumaproject.markdownhelperkeyboard.sumire_special_key.SumireSpecialKeyRepository
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizePreferenceAccessor
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeOrientation
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeKeyboardType
 
 /** Tabs switch only controls; both edit the same permanently visible keyboard preview. */
 internal class KeyboardSizeEditorTabs(
@@ -30,6 +36,9 @@ internal class KeyboardSizeEditorTabs(
     private val selectQwerty: (Boolean) -> Unit,
     private val isRightAligned: () -> Boolean,
     private val refreshGui: () -> Unit,
+    private val appPreference: AppPreference,
+    private val keyboardRepository: KeyboardRepository,
+    private val sumireSpecialKeyRepository: SumireSpecialKeyRepository,
 ) {
     private val context = gui.context
     private val density = context.resources.displayMetrics.density
@@ -46,7 +55,22 @@ internal class KeyboardSizeEditorTabs(
     private val guiControls = ScrollView(context).apply { addView(controls) }
     private val numericContainer = FrameLayout(context).apply { id = R.id.keyboard_size_numeric_container; isVisible = false }
     private val viewport: KeyboardSizePreviewViewport
-    val previewScale get() = viewport.previewScale
+    private val previewArea = FrameLayout(context)
+    private var splitPreview: FoldSizingPreview? = null
+    private val drafts = mutableMapOf<Boolean, KeyboardSizeValues>()
+    private val sizePreferences = KeyboardSizePreferenceAccessor(appPreference)
+    private val orientation get() = if (landscape) KeyboardSizeOrientation.Landscape else KeyboardSizeOrientation.Portrait
+    private var unfolded = false
+    val previewScale get() = if (unfolded) splitPreview?.previewScale ?: 1f else viewport.previewScale
+
+    private fun values(qwerty: Boolean) = drafts[qwerty] ?: sizePreferences.load(orientation,
+        if (qwerty) KeyboardSizeKeyboardType.Qwerty else KeyboardSizeKeyboardType.TenKey, unfolded)
+
+    private fun position(qwerty: Boolean): Boolean = if (qwerty) {
+        if (landscape) appPreference.qwerty_keyboard_position_landscape ?: true else appPreference.qwerty_keyboard_position ?: true
+    } else {
+        if (landscape) appPreference.keyboard_position_landscape ?: true else appPreference.keyboard_position ?: true
+    }
     val root: LinearLayout
     val selectedTab get() = tabs.selectedTabPosition
     private val numeric get() = fragment.childFragmentManager.findFragmentByTag(NUMERIC_TAG) as? KeyboardSizeDirectInputFragment
@@ -71,18 +95,19 @@ internal class KeyboardSizeEditorTabs(
         canvas.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
             if (right - left != oldRight - oldLeft) applyDraft()
         }
+        previewArea.addView(viewport, FrameLayout.LayoutParams(-1, -1))
         root = object : LinearLayout(context) {
             override fun onMeasure(widthSpec: Int, heightSpec: Int) {
                 val available = (MeasureSpec.getSize(heightSpec) - paddingBottom).coerceAtLeast(0)
                 val height = minOf(dp(280), (available * .44f).toInt()).coerceAtLeast(dp(80))
-                viewport.layoutParams.height = height
+                previewArea.layoutParams.height = height
                 super.onMeasure(widthSpec, heightSpec)
             }
         }.apply {
             orientation = LinearLayout.VERTICAL
             isFocusableInTouchMode = true
             addView(posture, LinearLayout.LayoutParams(-1, -2))
-            addView(viewport, LinearLayout.LayoutParams(-1, dp(280)))
+            addView(previewArea, LinearLayout.LayoutParams(-1, dp(280)))
             addView(tabs, LinearLayout.LayoutParams(-1, -2))
             addView(FrameLayout(context).apply {
                 addView(guiControls, FrameLayout.LayoutParams(-1, -1))
@@ -128,6 +153,20 @@ internal class KeyboardSizeEditorTabs(
             override fun onTabUnselected(tab: TabLayout.Tab) = Unit
             override fun onTabReselected(tab: TabLayout.Tab) = Unit
         })
+        splitPreview = FoldSizingPreview(fragment, appPreference, keyboardRepository,
+            sumireSpecialKeyRepository, landscape, ::values, ::position,
+            onSelectFamily = { qwerty -> selectQwerty(qwerty) },
+            onGesture = { qwerty, value, finished ->
+                if (isQwerty() != qwerty) selectQwerty(qwerty)
+                drafts[qwerty] = value
+                numeric?.selectKeyboardType(qwerty)
+                numeric?.showPreviewValues(value)
+                if (finished) {
+                    sizePreferences.save(orientation, if (qwerty) KeyboardSizeKeyboardType.Qwerty else KeyboardSizeKeyboardType.TenKey,
+                        value, unfolded)
+                }
+            })
+        previewArea.addView(splitPreview!!.view, FrameLayout.LayoutParams(-1, -1))
         onPostureChanged()
         numeric?.refreshValues()
         if (selected == 1) tabs.getTabAt(1)?.select() else show(0)
@@ -139,7 +178,8 @@ internal class KeyboardSizeEditorTabs(
         root.requestFocus()
         guiControls.isVisible = position == 0
         numericContainer.isVisible = position == 1
-        handles.forEach { it.isVisible = position == 0 }
+        handles.forEach { it.isVisible = position == 0 && !unfolded }
+        splitPreview?.setEditing(position == 0)
         // No reload here: switching lower controls must retain the current numeric draft.
     }
 
@@ -147,11 +187,13 @@ internal class KeyboardSizeEditorTabs(
         if (numeric?.isQwertySelected() != isQwerty()) numeric?.selectKeyboardType(isQwerty())
     }
 
-    fun reloadValues() { numeric?.refreshValues() }
+    fun reloadValues() { numeric?.refreshValues(); splitPreview?.refresh() }
 
     fun applyDraft() { numeric?.currentPreviewValues()?.let(::applyValues) }
 
     private fun applyValues(values: KeyboardSizeValues) {
+        drafts[isQwerty()] = values
+        splitPreview?.refresh()
         val available = (canvas.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels) - canvas.paddingLeft - canvas.paddingRight
         keyboard.layoutParams = (keyboard.layoutParams as ConstraintLayout.LayoutParams).apply {
             height = dp(values.heightDp)
@@ -163,6 +205,10 @@ internal class KeyboardSizeEditorTabs(
     }
 
     fun onGuiGeometryChanged() {
+        if (unfolded) {
+            splitPreview?.refresh()
+            return
+        }
         val params = keyboard.layoutParams as ConstraintLayout.LayoutParams
         val available = (canvas.width - canvas.paddingLeft - canvas.paddingRight).coerceAtLeast(1)
         numeric?.showPreviewValues(KeyboardSizeValues(
@@ -175,9 +221,16 @@ internal class KeyboardSizeEditorTabs(
     }
 
     fun onPostureChanged() {
-        val unfolded = KeyboardLayoutState.isUnfolded(context.resources.configuration)
+        val next = KeyboardLayoutState.isUnfolded(context.resources.configuration)
+        if (unfolded != next) drafts.clear()
+        unfolded = next
+        viewport.isVisible = !unfolded
+        splitPreview?.view?.isVisible = unfolded
+        handles.forEach { it.isVisible = !unfolded && selectedTab == 0 }
+        splitPreview?.setEditing(selectedTab == 0)
         posture.setText(if (unfolded) R.string.keyboard_size_unfolded else R.string.keyboard_size_folded)
         numeric?.onFoldPostureChanged(unfolded)
+        splitPreview?.refresh()
     }
     fun dispose() { fragment.requireActivity().window.setSoftInputMode(previousSoftInputMode) }
 
