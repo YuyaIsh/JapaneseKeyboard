@@ -1,16 +1,16 @@
-Source HEAD: 68df463e8b4efeab9b434b601af3d2b70760f0a3
-Base: c982ae8f906ee08ed065d5c2a3a075769e927414
-APK SHA256: a27e4354b730a51cf67833859f0124f447511ed024fdf7b41546b99736245bc6
-Final build/test command:
-./gradlew :app:testLiteStandardDebugUnitTest --tests '*KeyboardHingeObserversTest' --tests '*KeyboardLayoutStateTest' --tests '*VisualKeyboardSizeSettingsTest' --tests '*FoldKeyboardLayoutTest' :app:assembleLiteStandardDebug
-PASS: 15 tests, zero failures/errors/skips; APK assembly successful.
-Earlier targeted split/Fold suite: 87 app tests and 3 custom_keyboard Sumire panel geometry/hit tests PASS (before final hinge lifecycle/observer fixes).
+Source HEAD: 9ee402311c6e9fd8d45136c989955fbea2f38334
+APK SHA256: a57f8eab91966e7abd7f851a499a6b72f5f101c033ec8555ada3e9d97e1fd04a
 
-Dedicated emulator SumireFoldWindows, Android 35, 1768x2208, 420dpi, OPENED=3.
-GUI OPENED initial TenKey width85%, right aligned, bounds [280,1374,1711,2056].
-QWERTY width65%, left aligned, bounds [73,1505,1167,2056].
-QWERTY selection/alignment restored after rotation, bounds [73,1065,1453,1616]; no sizing preference writes from selecting previews or recreation.
-Actual drag handles saved unfolded portrait TenKey width76%, height290dp, QWERTY width57%, height229dp. Closed keys, landscape keys and configured SUMIRE/SUMIRE selections unchanged.
+Final APK and focused checks PASS:
+./gradlew :app:assembleLiteStandardDebug :app:testLiteStandardDebugUnitTest --tests '*VisualKeyboardSizeSettingsTest' --tests '*KeyboardHingeObserversTest' --tests '*KeyboardLayoutStateTest'
+8 tests pass (3 + 1 + 4), no failures/errors/skips.
+./gradlew :app:testLiteStandardDebugUnitTest --tests '*KeyboardSizeEditorLayoutTest'
+1 layout regression test pass, checks visible separate alignment/reset targets in BOTH historical visual editor layouts at 400x700dp.
 
-Dual-pane visual integration UNVERIFIED: final UI attempts did not yield a usable rendered MAIN/SUB keyboard capture. No claim that the blank/transient screenshots validate geometry or normal input. Those images are excluded.
-Automated actual dock/controller measurement tests cover both slots, per-family widths/heights, offsets, rotation-sized hosts, re-creation and subsequent resize. The real-device/OEM integration remains unverified.
+Android 35 SumireFoldWindows emulator, native viewport 1768x2208 at 420dpi.
+Screenshots were individually inspected after final APK installation. GUI alignment/reset buttons, family selection and drag handles are visible; all numeric fields and Save/Reset are visible without scrolling in these captures.
+OPENED GUI/Numeric: existing values260dp/85%; numeric Save275dp/80% reflected in GUI, then actual drag reduced width to75%; Numeric showed275dp/75%. These values remained after final APK update (both OPENED screenshots show retained values).
+CLOSED sensor posture: Numeric loaded separate225dp/90% values (shown in screenshot); Save230dp/92% and actual GUI height drag persisted, while OPENED275dp/75% remained unchanged. Unfolding reloaded275dp/75%.
+QWERTY210dp/65% and selected Numeric tab survived portrait-landscape rotation; returning to GUI showed qwerty keys.
+CLOSED capture uses the emulator's unchanged native viewport with CLOSED hinge posture, not a verified narrow outer-display geometry. No separate outer-display layout claim is made.
+Earlier PR limitation still applies: actual rendered MAIN/SUB IME integration was not visually verified. This follow-up changes only size-editor UI; split geometry/input routing are unchanged.

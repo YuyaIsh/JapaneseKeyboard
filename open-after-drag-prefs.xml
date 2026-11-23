@@ -10,10 +10,11 @@
     <int name="candidate_height_defaults_migration_version_preference" value="1" />
     <int name="romaji_map_data_version" value="1" />
     <int name="qwerty_keyboard_width_landscape_preference" value="85" />
-    <int name="keyboard_margin_end_dp_preference_unfolded" value="24" />
+    <int name="keyboard_margin_end_dp_preference_unfolded" value="6" />
     <int name="candidate_view_height_portrait_column_3_dp_preference" value="100" />
     <int name="qwerty_keyboard_margin_start_dp_preference" value="12" />
-    <int name="qwerty_keyboard_width_preference_unfolded" value="57" />
+    <string name="composing_guide_display_mode">integrated</string>
+    <int name="qwerty_keyboard_width_preference_unfolded" value="65" />
     <int name="candidate_default_height_landscape_column_1_dp_preference" value="60" />
     <int name="save_last_used_keyboard_int" value="0" />
     <int name="qwerty_keyboard_margin_end_dp_landscape_preference_unfolded" value="0" />
@@ -24,6 +25,7 @@
     <boolean name="qwerty_keyboard_position_preference_unfolded" value="false" />
     <int name="keyboard_margin_start_dp_landscape_preference_unfolded" value="0" />
     <boolean name="gojuon_keyboard_type_migrated_v1" value="true" />
+    <boolean name="composing_guide_independent_migrated" value="true" />
     <int name="keyboard_width_landscape_preference_unfolded" value="70" />
     <int name="candidate_view_empty_height_dp_landscape_preference" value="60" />
     <int name="candidate_view_height_dp_landscape_preference" value="60" />
@@ -31,25 +33,26 @@
     <boolean name="qwerty_keyboard_position_landscape_preference_unfolded" value="false" />
     <int name="candidate_view_height_portrait_column_2_dp_preference" value="80" />
     <int name="keyboard_height_preference" value="225" />
-    <int name="keyboard_vertical_margin_bottom_preference_unfolded" value="28" />
+    <int name="keyboard_vertical_margin_bottom_preference_unfolded" value="10" />
     <int name="qwerty_keyboard_vertical_margin_bottom_landscape_preference" value="0" />
     <int name="qwerty_keyboard_width_landscape_preference_unfolded" value="60" />
     <int name="keyboard_margin_end_dp_landscape_preference" value="6" />
-    <int name="keyboard_height_preference_unfolded" value="290" />
+    <int name="keyboard_height_preference_unfolded" value="275" />
     <int name="candidate_view_height_landscape_column_3_dp_preference" value="100" />
     <boolean name="candidate_height_per_column_migrated_preference" value="true" />
     <int name="keyboard_margin_end_dp_preference" value="6" />
     <int name="keyboard_margin_end_dp_landscape_preference_unfolded" value="6" />
     <boolean name="sumire_keymap_guide_modes_migrated" value="true" />
+    <boolean name="composing_guide_text_enabled" value="false" />
     <boolean name="keyboard_position_landscape_preference_unfolded" value="true" />
     <int name="qwerty_keyboard_vertical_margin_bottom_landscape_preference_unfolded" value="10" />
     <int name="candidate_default_height_portrait_column_3_dp_preference" value="100" />
-    <int name="qwerty_keyboard_height_preference_unfolded" value="229" />
+    <int name="qwerty_keyboard_height_preference_unfolded" value="210" />
     <int name="candidate_view_height_dp_preference" value="60" />
     <int name="keyboard_margin_start_dp_landscape_preference" value="0" />
     <int name="qwerty_keyboard_margin_end_dp_landscape_preference" value="0" />
     <int name="candidate_default_empty_height_dp_landscape_preference" value="60" />
-    <int name="keyboard_width_preference_unfolded" value="76" />
+    <int name="keyboard_width_preference_unfolded" value="75" />
     <boolean name="keyboard_position_landscape_preference" value="true" />
     <int name="keyboard_margin_start_dp_preference" value="0" />
     <int name="qwerty_keyboard_width_preference" value="85" />
@@ -57,7 +60,7 @@
     <int name="keyboard_vertical_margin_bottom_landscape_preference_unfolded" value="10" />
     <int name="candidate_view_height_portrait_column_1_dp_preference" value="60" />
     <int name="candidate_default_empty_height_dp_preference" value="60" />
-    <int name="qwerty_keyboard_vertical_margin_bottom_preference_unfolded" value="19" />
+    <int name="qwerty_keyboard_vertical_margin_bottom_preference_unfolded" value="10" />
     <int name="keyboard_width_landscape_preference" value="90" />
     <int name="candidate_view_height_landscape_column_2_dp_preference" value="80" />
     <boolean name="qwerty_keyboard_position_preference" value="false" />
@@ -73,7 +76,7 @@
     <int name="candidate_default_height_portrait_column_2_dp_preference" value="80" />
     <boolean name="keyboard_position_preference" value="true" />
     <int name="keyboard_vertical_margin_bottom_preference" value="0" />
-    <int name="qwerty_keyboard_margin_start_dp_preference_unfolded" value="21" />
+    <int name="qwerty_keyboard_margin_start_dp_preference_unfolded" value="12" />
     <string name="split_keyboard_main_type">SUMIRE</string>
     <string name="fold_keyboard_layout">SPLIT</string>
     <boolean name="keyboard_position_preference_unfolded" value="true" />
