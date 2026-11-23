@@ -1,0 +1,16 @@
+Source HEAD: 68df463e8b4efeab9b434b601af3d2b70760f0a3
+Base: c982ae8f906ee08ed065d5c2a3a075769e927414
+APK SHA256: a27e4354b730a51cf67833859f0124f447511ed024fdf7b41546b99736245bc6
+Final build/test command:
+./gradlew :app:testLiteStandardDebugUnitTest --tests '*KeyboardHingeObserversTest' --tests '*KeyboardLayoutStateTest' --tests '*VisualKeyboardSizeSettingsTest' --tests '*FoldKeyboardLayoutTest' :app:assembleLiteStandardDebug
+PASS: 15 tests, zero failures/errors/skips; APK assembly successful.
+Earlier targeted split/Fold suite: 87 app tests and 3 custom_keyboard Sumire panel geometry/hit tests PASS (before final hinge lifecycle/observer fixes).
+
+Dedicated emulator SumireFoldWindows, Android 35, 1768x2208, 420dpi, OPENED=3.
+GUI OPENED initial TenKey width85%, right aligned, bounds [280,1374,1711,2056].
+QWERTY width65%, left aligned, bounds [73,1505,1167,2056].
+QWERTY selection/alignment restored after rotation, bounds [73,1065,1453,1616]; no sizing preference writes from selecting previews or recreation.
+Actual drag handles saved unfolded portrait TenKey width76%, height290dp, QWERTY width57%, height229dp. Closed keys, landscape keys and configured SUMIRE/SUMIRE selections unchanged.
+
+Dual-pane visual integration UNVERIFIED: final UI attempts did not yield a usable rendered MAIN/SUB keyboard capture. No claim that the blank/transient screenshots validate geometry or normal input. Those images are excluded.
+Automated actual dock/controller measurement tests cover both slots, per-family widths/heights, offsets, rotation-sized hosts, re-creation and subsequent resize. The real-device/OEM integration remains unverified.
