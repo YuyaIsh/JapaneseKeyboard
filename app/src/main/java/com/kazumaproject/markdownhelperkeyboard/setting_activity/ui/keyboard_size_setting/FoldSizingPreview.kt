@@ -152,9 +152,11 @@ internal class FoldSizingPreview(
 
     fun refresh() {
         panes.values.forEach { pane ->
-            val value = values(pane.qwerty)
-            pane.bodyFrame.layoutParams.height = dp(value.heightDp)
-            pane.bodyFrame.requestLayout()
+            val height = dp(values(pane.qwerty).heightDp)
+            if (pane.bodyFrame.layoutParams.height != height) {
+                pane.bodyFrame.layoutParams.height = height
+                pane.bodyFrame.requestLayout()
+            }
         }
         host.requestLayout()
         view.requestLayout()

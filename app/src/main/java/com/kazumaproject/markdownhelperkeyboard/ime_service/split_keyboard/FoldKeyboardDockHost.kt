@@ -31,16 +31,20 @@ internal class FoldKeyboardDockHost(
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val paneWidth = foldLayout.paneWidth(width, (280 * resources.displayMetrics.density).roundToInt())
         val heightLimit = MeasureSpec.getSize(heightMeasureSpec)
-        val naturalHeightSpec = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED)
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        else MeasureSpec.makeMeasureSpec(heightLimit, MeasureSpec.AT_MOST)
         var desiredHeight = suggestedMinimumHeight
-        for (index in 0 until childCount) {
-            val child = getChildAt(index)
-            if (child.visibility == View.GONE) continue
-            val slot = foldLayout.slots.getOrNull(index) ?: continue
-            child.measure(MeasureSpec.makeMeasureSpec(childWidth(slot, paneWidth), MeasureSpec.EXACTLY), naturalHeightSpec)
-            desiredHeight = maxOf(desiredHeight, child.measuredHeight + size(slot).bottomMargin.coerceAtLeast(0))
+        // A fixed preview already supplies its height. Avoid a discarded natural pass
+        // through both real keyboard layouts; the ordinary wrap-content IME still needs it.
+        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.EXACTLY) {
+            val naturalHeightSpec = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED)
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            else MeasureSpec.makeMeasureSpec(heightLimit, MeasureSpec.AT_MOST)
+            for (index in 0 until childCount) {
+                val child = getChildAt(index)
+                if (child.visibility == View.GONE) continue
+                val slot = foldLayout.slots.getOrNull(index) ?: continue
+                child.measure(MeasureSpec.makeMeasureSpec(childWidth(slot, paneWidth), MeasureSpec.EXACTLY), naturalHeightSpec)
+                desiredHeight = maxOf(desiredHeight, child.measuredHeight + size(slot).bottomMargin.coerceAtLeast(0))
+            }
         }
         setMeasuredDimension(resolveSize(width, widthMeasureSpec), resolveSize(desiredHeight, heightMeasureSpec))
         // Equal pane surfaces keep both candidate strips and keyboard bottoms aligned.
