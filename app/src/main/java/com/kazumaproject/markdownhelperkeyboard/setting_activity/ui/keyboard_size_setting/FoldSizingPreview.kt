@@ -2,6 +2,7 @@ package com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_si
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
+import android.view.LayoutInflater
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -13,6 +14,7 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.custom_keyboard.data.KeyboardInputMode
 import com.kazumaproject.custom_keyboard.view.FlickKeyboardView
 import com.kazumaproject.custom_keyboard.view.KeyHitTestMode
@@ -102,7 +104,7 @@ internal class FoldSizingPreview(
                 host.addView(pane.surface, FrameLayout.LayoutParams(-1, -1))
                 val keyboard: View = try {
                     when (selection.type) {
-                        KeyboardType.TENKEY, KeyboardType.SPLIT -> TenKey(context).also { configureTenKeyPreview(context, appPreference, it) }
+                        KeyboardType.TENKEY, KeyboardType.SPLIT -> createTenKey()
                         KeyboardType.GOJUON -> GojuonKeyboardView(context).also { configureGojuonPreview(context, appPreference, it) }
                         KeyboardType.QWERTY, KeyboardType.ROMAJI -> QWERTYKeyboardView(context).also {
                             configureQwertyPreview(context, appPreference, it, selection.type == KeyboardType.ROMAJI)
@@ -140,7 +142,7 @@ internal class FoldSizingPreview(
                     if (selection.type != KeyboardType.CUSTOM) throw failure
                     Timber.w(failure, "Fold sizing custom layout disappeared: %s", selection.customStableId)
                     pane.label.text = "${slot.name} · ${context.getKeyboardDisplayName(KeyboardType.TENKEY)}"
-                    TenKey(context).also { configureTenKeyPreview(context, appPreference, it) }
+                    createTenKey()
                 }
                 pane.body.addView(keyboard)
             }
@@ -235,6 +237,14 @@ internal class FoldSizingPreview(
                     true
                 }
             }
+        }
+    }
+
+    private fun createTenKey(): TenKey {
+        val page = LayoutInflater.from(context).inflate(R.layout.page_tenkey, null)
+        return page.findViewById<TenKey>(R.id.keyboard_view).also {
+            (it.parent as? ViewGroup)?.removeView(it)
+            configureTenKeyPreview(context, appPreference, it)
         }
     }
 
