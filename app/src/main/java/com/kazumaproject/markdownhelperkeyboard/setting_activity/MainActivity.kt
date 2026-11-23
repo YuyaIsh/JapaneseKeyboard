@@ -51,9 +51,13 @@ class MainActivity : AppCompatActivity() {
                             feature?.state == FoldingFeature.State.HALF_OPENED
                         KeyboardLayoutState.publishPosture(unfolded) {
                             supportFragmentManager.fragments.forEach { fragment ->
-                                (fragment.childFragmentManager.fragments + fragment)
-                                    .filterIsInstance<com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment>()
-                                    .forEach { it.onFoldPostureChanged(unfolded) }
+                                (fragment.childFragmentManager.fragments + fragment).forEach { child ->
+                                    when (child) {
+                                        is com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_direct_input.KeyboardSizeDirectInputFragment -> child.onFoldPostureChanged(unfolded)
+                                        is com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.KeyboardSettingFragment -> child.onFoldPostureChanged()
+                                        is com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_landscape_setting.KeyboardSizeLandscapeFragment -> child.onFoldPostureChanged()
+                                    }
+                                }
                             }
                         }
                     }

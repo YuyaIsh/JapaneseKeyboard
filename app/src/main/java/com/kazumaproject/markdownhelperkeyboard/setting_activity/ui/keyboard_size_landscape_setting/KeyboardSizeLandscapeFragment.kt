@@ -39,6 +39,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     private var isRightAligned = true
     private var areControlsVisible = true
+    private var selectedPage = KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION
 
     private val minHeightDp = 100
     private val maxHeightDp = 420
@@ -55,6 +56,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        selectedPage = savedInstanceState?.getInt("selectedPage") ?: selectedPage
+        areControlsVisible = savedInstanceState?.getBoolean("areControlsVisible") ?: areControlsVisible
         setupMenu()
         isRightAligned = appPreference.keyboard_position_landscape ?: true
 
@@ -74,11 +77,13 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         val adapter = KeyboardViewPagerAdapter()
         binding.keyboardViewPager.adapter = adapter
         binding.keyboardViewPager.isUserInputEnabled = false
+        binding.keyboardViewPager.setCurrentItem(selectedPage, false)
 
         binding.keyboardViewPager.registerOnPageChangeCallback(object :
             ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
+                selectedPage = position
                 applyCurrentPageDimensions()
                 updateTooltipUI(position)
 
@@ -138,8 +143,10 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         val heightInPx = (heightPref * density).toInt()
         val marginBottomInPx = (marginBottomPref * density).toInt()
 
-        val screenWidth = WindowMetricsCalculator.getOrCreate()
-            .computeCurrentWindowMetrics(requireActivity()).bounds.width()
+        val screenWidth = (binding.keyboardSettingConstraint.width.takeIf { it > 0 }
+            ?: WindowMetricsCalculator.getOrCreate()
+                .computeCurrentWindowMetrics(requireActivity()).bounds.width()) -
+            binding.keyboardSettingConstraint.paddingLeft - binding.keyboardSettingConstraint.paddingRight
 
         val widthInPx = if (widthPref >= 98) {
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -155,11 +162,8 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         val marginStartPx = (marginStartDpPref * density).toInt()
         val marginEndPx = (marginEndDpPref * density).toInt()
 
-        if (isRightAligned) {
-            layoutParams.marginEnd = marginEndPx
-        } else {
-            layoutParams.marginStart = marginStartPx
-        }
+        layoutParams.marginEnd = if (isRightAligned) marginEndPx else 0
+        layoutParams.marginStart = if (isRightAligned) 0 else marginStartPx
 
         binding.keyboardContainer.layoutParams = layoutParams
 
@@ -319,8 +323,10 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         var initialWidth = 0
 
         val density = resources.displayMetrics.density
-        val screenWidth = WindowMetricsCalculator.getOrCreate()
-            .computeCurrentWindowMetrics(requireActivity()).bounds.width()
+        val screenWidth = (binding.keyboardSettingConstraint.width.takeIf { it > 0 }
+            ?: WindowMetricsCalculator.getOrCreate()
+                .computeCurrentWindowMetrics(requireActivity()).bounds.width()) -
+            binding.keyboardSettingConstraint.paddingLeft - binding.keyboardSettingConstraint.paddingRight
 
         val minHeightPx = minHeightDp * density
         val maxHeightPx = maxHeightDp * density
@@ -441,6 +447,11 @@ class KeyboardSizeLandscapeFragment : Fragment() {
     private fun setupKeyboardPositionButton() {
         binding.keyboardPositionButton.setOnClickListener {
             isRightAligned = !isRightAligned
+            if (binding.keyboardViewPager.currentItem == KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION) {
+                appPreference.keyboard_position_landscape = isRightAligned
+            } else {
+                appPreference.qwerty_keyboard_position_landscape = isRightAligned
+            }
             updateKeyboardAlignment()
         }
     }
@@ -474,11 +485,6 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     private fun updateKeyboardAlignment() {
         val currentPage = binding.keyboardViewPager.currentItem
-        if (currentPage == KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION) {
-            appPreference.keyboard_position_landscape = isRightAligned
-        } else {
-            appPreference.qwerty_keyboard_position_landscape = isRightAligned
-        }
 
         val constraintLayout = binding.keyboardSettingConstraint
         val constraintSet = ConstraintSet()
@@ -504,9 +510,9 @@ class KeyboardSizeLandscapeFragment : Fragment() {
             } else {
                 appPreference.qwerty_keyboard_margin_end_dp_landscape ?: 0
             }
-            val lp = binding.keyboardContainer.layoutParams as ConstraintLayout.LayoutParams
-            lp.marginEnd = (endDp * resources.displayMetrics.density).toInt()
-            binding.keyboardContainer.layoutParams = lp
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.END,
+                (endDp * resources.displayMetrics.density).toInt())
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.START, 0)
 
         } else {
             constraintSet.connect(
@@ -531,9 +537,9 @@ class KeyboardSizeLandscapeFragment : Fragment() {
             } else {
                 appPreference.qwerty_keyboard_margin_start_dp_landscape ?: 0
             }
-            val lp = binding.keyboardContainer.layoutParams as ConstraintLayout.LayoutParams
-            lp.marginStart = (startDp * resources.displayMetrics.density).toInt()
-            binding.keyboardContainer.layoutParams = lp
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.START,
+                (startDp * resources.displayMetrics.density).toInt())
+            constraintSet.setMargin(binding.keyboardContainer.id, ConstraintSet.END, 0)
         }
 
         constraintSet.applyTo(constraintLayout)
@@ -565,7 +571,31 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         binding.qwertyTooltipButton.visibility = visibility
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshPreview()
+    }
+
+    fun onFoldPostureChanged() {
+        if (_binding != null) refreshPreview()
+    }
+
+    private fun refreshPreview() {
+        binding.keyboardSettingConstraint.post {
+            if (_binding == null) return@post
+            applyCurrentPageDimensions()
+            updateKeyboardAlignment()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("selectedPage", selectedPage)
+        outState.putBoolean("areControlsVisible", areControlsVisible)
+    }
+
     override fun onDestroyView() {
+        selectedPage = binding.keyboardViewPager.currentItem
         super.onDestroyView()
         _binding = null
     }
