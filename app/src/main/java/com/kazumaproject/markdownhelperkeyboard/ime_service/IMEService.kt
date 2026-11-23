@@ -2442,6 +2442,7 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
 
     private var preservingFoldConfiguration = false
     private var foldMonitor: FoldKeyboardMonitor? = null
+    private var foldSizePostureListener: android.hardware.SensorEventListener? = null
     private var activeFoldLayout: FoldKeyboardLayout? = null
     private var foldDockHost: FoldKeyboardDockHost? = null
     private var foldNormalLayoutParams: FrameLayout.LayoutParams? = null
@@ -3095,6 +3096,11 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
         )
         runtimeInputPreferenceListenerRegistered = true
         syncRuntimeInputPreferences()
+        foldSizePostureListener = com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState.observeHinge(this) {
+            reloadKeyboardLayoutEditCachesFromPreferences()
+            foldDockHost?.requestLayout()
+            mainLayoutBinding?.let { updateKeyboardLayout(it) }
+        }
         startKanaKanjiEngineLoad()
 
         if (AppVariantConfig.hasGemma) {
@@ -6191,6 +6197,8 @@ class IMEService : InputMethodService(), LifecycleOwner, InputConnection,
     }
 
     override fun onDestroy() {
+        com.kazumaproject.markdownhelperkeyboard.setting_activity.KeyboardLayoutState.stopObserving(this, foldSizePostureListener)
+        foldSizePostureListener = null
         foldMonitor?.stop()
         foldMonitor = null
         stopSplitKeyboard()
