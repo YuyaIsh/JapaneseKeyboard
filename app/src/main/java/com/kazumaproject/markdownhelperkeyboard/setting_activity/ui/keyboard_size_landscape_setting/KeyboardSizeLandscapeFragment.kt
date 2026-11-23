@@ -22,7 +22,7 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.FragmentKeyboardsizeLandscapeBinding
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.adapter.KeyboardViewPagerAdapter
-import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.navigateSafely
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.KeyboardSizeEditorTabs
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
@@ -39,6 +39,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     private var isRightAligned = true
     private var areControlsVisible = true
+    private var editorTabs: KeyboardSizeEditorTabs? = null
     private var selectedPage = KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION
 
     private val minHeightDp = 100
@@ -51,7 +52,11 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentKeyboardsizeLandscapeBinding.inflate(inflater, container, false)
-        return binding.root
+        return KeyboardSizeEditorTabs(this, binding.root, true,
+            isQwerty = { binding.keyboardViewPager.currentItem == KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION },
+            selectQwerty = { qwerty -> binding.keyboardViewPager.setCurrentItem(if (qwerty) KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION else KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION, false) },
+            refreshGui = ::refreshPreview,
+        ).also { editorTabs = it }.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -71,6 +76,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         setupMoveHandle()
 
         updateControlsVisibility()
+        editorTabs?.bind(savedInstanceState?.getInt("editorTab") ?: 0)
     }
 
     private fun setupViewPager() {
@@ -197,6 +203,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
         menuHost.addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                 menuInflater.inflate(R.menu.menu_keyboard_settings, menu)
+                menu.removeItem(R.id.action_keyboard_size_direct_input)
             }
 
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
@@ -209,13 +216,6 @@ class KeyboardSizeLandscapeFragment : Fragment() {
                     R.id.action_toggle_visibility -> {
                         areControlsVisible = !areControlsVisible
                         updateControlsVisibility()
-                        true
-                    }
-
-                    R.id.action_keyboard_size_direct_input -> {
-                        navigateSafely(
-                            R.id.action_keyboardSizeLandscapeFragment_to_keyboardSizeDirectInputFragment
-                        )
                         true
                     }
 
@@ -577,6 +577,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
     }
 
     fun onFoldPostureChanged() {
+        editorTabs?.onPostureChanged()
         if (_binding != null) refreshPreview()
     }
 
@@ -590,6 +591,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putInt("editorTab", editorTabs?.selectedTab ?: 0)
         outState.putInt("selectedPage", selectedPage)
         outState.putBoolean("areControlsVisible", areControlsVisible)
     }
@@ -597,6 +599,7 @@ class KeyboardSizeLandscapeFragment : Fragment() {
     override fun onDestroyView() {
         selectedPage = binding.keyboardViewPager.currentItem
         super.onDestroyView()
+        editorTabs = null
         _binding = null
     }
 }

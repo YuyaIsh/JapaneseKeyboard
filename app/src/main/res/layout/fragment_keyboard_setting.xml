@@ -22,10 +22,11 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/keyboard_position_button"
             android:layout_width="0dp"
-            android:layout_height="64dp"
+            android:layout_height="48dp"
             android:layout_marginTop="8dp"
+            android:layout_marginEnd="4dp"
             android:textColor="@color/keyboard_icon_color"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/reset_layout_button"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/keyboard_position_title" />
 
@@ -33,12 +34,12 @@
             android:id="@+id/reset_layout_button"
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="0dp"
-            android:layout_height="64dp"
-            android:layout_marginTop="8dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
             android:text="@string/reset_keyboard_size_button_text"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/keyboard_position_button" />
+            app:layout_constraintStart_toEndOf="@id/keyboard_position_button"
+            app:layout_constraintTop_toTopOf="@id/keyboard_position_button" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/tenkey_tooltip_button"

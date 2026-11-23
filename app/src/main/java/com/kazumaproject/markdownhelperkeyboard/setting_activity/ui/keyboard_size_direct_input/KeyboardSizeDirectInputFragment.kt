@@ -40,6 +40,8 @@ class KeyboardSizeDirectInputFragment : Fragment() {
 
     private var unfolded = false
     private var postureSpinner: Spinner? = null
+    private var qwertySelection: Boolean? = null
+    private val embeddedEditor get() = arguments?.getBoolean("embeddedSizeEditor") == true
     private lateinit var panelControls: LinearLayout
     private val panelPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
 
@@ -60,30 +62,33 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         setupStateControls(savedInstanceState)
-        setupMenu()
-        setupSelectionGroups()
+        if (!embeddedEditor) setupMenu()
+        setupSelectionGroups(savedInstanceState)
         setupButtons()
         loadSelectedValues()
     }
 
     private fun setupStateControls(savedInstanceState: Bundle?) {
-        unfolded = savedInstanceState?.getBoolean("unfolded")
-            ?: KeyboardLayoutState.isUnfolded(resources.configuration)
+        unfolded = if (embeddedEditor) KeyboardLayoutState.isUnfolded(resources.configuration)
+            else savedInstanceState?.getBoolean("unfolded")
+                ?: KeyboardLayoutState.isUnfolded(resources.configuration)
         val container = (binding.root as ViewGroup).getChildAt(0) as LinearLayout
-        val state = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item,
-                arrayOf(getString(R.string.keyboard_size_folded), getString(R.string.keyboard_size_unfolded)))
-            setSelection(if (unfolded) 1 else 0)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    unfolded = position == 1
-                    loadSelectedValues()
+        if (!embeddedEditor) {
+            val state = Spinner(requireContext()).apply {
+                adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item,
+                    arrayOf(getString(R.string.keyboard_size_folded), getString(R.string.keyboard_size_unfolded)))
+                setSelection(if (unfolded) 1 else 0)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        unfolded = position == 1
+                        loadSelectedValues()
+                    }
                 }
             }
+            postureSpinner = state
+            container.addView(state, 0)
         }
-        postureSpinner = state
-        container.addView(state, 0)
         panelControls = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         container.addView(panelControls)
     }
@@ -151,10 +156,12 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean("unfolded", unfolded)
+        outState.putBoolean("qwertySelection", isQwertySelected())
+        if (_binding != null) outState.putString("selectedOrientation", selectedOrientation().name)
     }
 
     fun onFoldPostureChanged(isUnfolded: Boolean) {
-        if (!isAdded || !this::panelControls.isInitialized || unfolded == isUnfolded) return
+        if (_binding == null || !isAdded || !this::panelControls.isInitialized || unfolded == isUnfolded) return
         unfolded = isUnfolded
         postureSpinner?.setSelection(if (isUnfolded) 1 else 0)
         loadSelectedValues()
@@ -183,22 +190,50 @@ class KeyboardSizeDirectInputFragment : Fragment() {
         }, viewLifecycleOwner, Lifecycle.State.RESUMED)
     }
 
-    private fun setupSelectionGroups() {
-        val initialOrientation = arguments?.getString(InitialOrientationArgument)
-        val initialOrientationButtonId = if (initialOrientation == InitialOrientationLandscape) {
+    private fun setupSelectionGroups(savedInstanceState: Bundle?) {
+        val initialOrientation = savedInstanceState?.getString("selectedOrientation")
+            ?: arguments?.getString(InitialOrientationArgument)
+        val initialOrientationButtonId = if (initialOrientation == InitialOrientationLandscape ||
+            initialOrientation == KeyboardSizeOrientation.Landscape.name) {
             binding.orientationLandscapeButton.id
         } else {
             binding.orientationPortraitButton.id
         }
         binding.orientationToggleGroup.check(initialOrientationButtonId)
-        binding.keyboardTypeToggleGroup.check(binding.keyboardTypeTenKeyButton.id)
+        qwertySelection = savedInstanceState?.getBoolean("qwertySelection") ?: qwertySelection
+            ?: (arguments?.getString("initialKeyboardType") == "qwerty")
+        binding.keyboardTypeToggleGroup.check(if (qwertySelection == true)
+            binding.keyboardTypeQwertyButton.id else binding.keyboardTypeTenKeyButton.id)
+        if (embeddedEditor) {
+            binding.orientationTitle.visibility = View.GONE
+            binding.orientationToggleGroup.visibility = View.GONE
+            binding.keyboardTypeTitle.visibility = View.GONE
+            binding.keyboardTypeTenKeyButton.setText(R.string.keyboard_size_tenkey_family_short)
+        }
 
         binding.orientationToggleGroup.addOnButtonCheckedListener { _, _, isChecked ->
             if (isChecked) loadSelectedValues()
         }
         binding.keyboardTypeToggleGroup.addOnButtonCheckedListener { _, _, isChecked ->
-            if (isChecked) loadSelectedValues()
+            if (isChecked) {
+                qwertySelection = isQwertySelected()
+                loadSelectedValues()
+            }
         }
+    }
+
+    fun selectKeyboardType(qwerty: Boolean) {
+        qwertySelection = qwerty
+        _binding?.keyboardTypeToggleGroup?.check(if (qwerty)
+            binding.keyboardTypeQwertyButton.id else binding.keyboardTypeTenKeyButton.id)
+    }
+
+    fun isQwertySelected(): Boolean = _binding?.let {
+        it.keyboardTypeToggleGroup.checkedButtonId == it.keyboardTypeQwertyButton.id
+    } ?: qwertySelection ?: (arguments?.getString("initialKeyboardType") == "qwerty")
+
+    fun refreshValues() {
+        if (_binding != null) loadSelectedValues()
     }
 
     private fun setupButtons() {
@@ -302,6 +337,8 @@ class KeyboardSizeDirectInputFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        qwertySelection = isQwertySelected()
+        postureSpinner = null
         super.onDestroyView()
         _binding = null
     }

@@ -1830,4 +1830,7 @@
     <string name="sumire_panel_width">幅: %1$d%%</string>
     <string name="sumire_panel_height">高さ: %1$d%%</string>
     <string name="sumire_panel_offset">端からの位置: %1$d%%</string>
+    <string name="keyboard_size_gui_tab">GUI</string>
+    <string name="keyboard_size_numeric_tab">数値入力</string>
+    <string name="keyboard_size_tenkey_family_short">テンキー / スミレ</string>
 </resources>

@@ -22,7 +22,7 @@ import com.kazumaproject.markdownhelperkeyboard.R
 import com.kazumaproject.markdownhelperkeyboard.databinding.FragmentKeyboardSettingBinding
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.AppPreference
 import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.adapter.KeyboardViewPagerAdapter
-import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.setting.navigateSafely
+import com.kazumaproject.markdownhelperkeyboard.setting_activity.ui.keyboard_size_setting.KeyboardSizeEditorTabs
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
@@ -39,6 +39,7 @@ class KeyboardSettingFragment : Fragment() {
 
     private var isRightAligned = true
     private var areControlsVisible = true
+    private var editorTabs: KeyboardSizeEditorTabs? = null
     private var selectedPage = KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION
 
     private val minHeightDp = 100
@@ -51,7 +52,11 @@ class KeyboardSettingFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentKeyboardSettingBinding.inflate(inflater, container, false)
-        return binding.root
+        return KeyboardSizeEditorTabs(this, binding.root, false,
+            isQwerty = { binding.keyboardViewPager.currentItem == KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION },
+            selectQwerty = { qwerty -> binding.keyboardViewPager.setCurrentItem(if (qwerty) KeyboardViewPagerAdapter.QWERTY_PAGE_POSITION else KeyboardViewPagerAdapter.TEN_KEY_PAGE_POSITION, false) },
+            refreshGui = ::refreshPreview,
+        ).also { editorTabs = it }.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -71,6 +76,7 @@ class KeyboardSettingFragment : Fragment() {
         setupMoveHandle()             // vertical + horizontal move
 
         updateControlsVisibility()
+        editorTabs?.bind(savedInstanceState?.getInt("editorTab") ?: 0)
     }
 
     private fun setupViewPager() {
@@ -202,6 +208,7 @@ class KeyboardSettingFragment : Fragment() {
         menuHost.addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                 menuInflater.inflate(R.menu.menu_keyboard_settings, menu)
+                menu.removeItem(R.id.action_keyboard_size_direct_input)
             }
 
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
@@ -214,13 +221,6 @@ class KeyboardSettingFragment : Fragment() {
                     R.id.action_toggle_visibility -> {
                         areControlsVisible = !areControlsVisible
                         updateControlsVisibility()
-                        true
-                    }
-
-                    R.id.action_keyboard_size_direct_input -> {
-                        navigateSafely(
-                            R.id.action_keyboardSettingFragment_to_keyboardSizeDirectInputFragment
-                        )
                         true
                     }
 
@@ -605,6 +605,7 @@ class KeyboardSettingFragment : Fragment() {
     }
 
     fun onFoldPostureChanged() {
+        editorTabs?.onPostureChanged()
         if (_binding != null) refreshPreview()
     }
 
@@ -618,6 +619,7 @@ class KeyboardSettingFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putInt("editorTab", editorTabs?.selectedTab ?: 0)
         outState.putInt("selectedPage", selectedPage)
         outState.putBoolean("areControlsVisible", areControlsVisible)
     }
@@ -625,6 +627,7 @@ class KeyboardSettingFragment : Fragment() {
     override fun onDestroyView() {
         selectedPage = binding.keyboardViewPager.currentItem
         super.onDestroyView()
+        editorTabs = null
         _binding = null
     }
 }
