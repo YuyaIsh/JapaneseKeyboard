@@ -84,4 +84,23 @@ class VisualKeyboardSizeSettingsTest {
         assertEquals(true, AppPreference.qwerty_keyboard_position_landscape)
         assertEquals(9, AppPreference.qwerty_keyboard_margin_end_dp_landscape)
     }
+    @Test fun asymmetricSumirePanelPreferencesRemainIndependentOfOuterKeyboardSizing() {
+        for (landscape in listOf(false, true)) {
+            val configuration = android.content.res.Configuration(context.resources.configuration).apply {
+                orientation = if (landscape) android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    else android.content.res.Configuration.ORIENTATION_PORTRAIT
+            }
+            val prefix = com.kazumaproject.markdownhelperkeyboard.ime_service.sumire.SumirePanelSettings.prefix(true, landscape)
+            prefs.edit().putBoolean("${prefix}_enabled", true).putBoolean("${prefix}_symmetric", false)
+                .putInt("${prefix}_left_width", 30).putInt("${prefix}_left_height", 60).putInt("${prefix}_left_offset", 5)
+                .putInt("${prefix}_right_width", 40).putInt("${prefix}_right_height", 90).putInt("${prefix}_right_offset", 3).commit()
+            KeyboardLayoutState.publishPosture(true)
+            AppPreference.keyboard_width = 75
+            AppPreference.qwerty_keyboard_width = 65
+            val panels = com.kazumaproject.markdownhelperkeyboard.ime_service.sumire.SumirePanelSettings.load(prefs, configuration, true)!!
+            assertEquals(com.kazumaproject.custom_keyboard.layout.SumirePanelSize(30, 60, 5), panels.left)
+            assertEquals(com.kazumaproject.custom_keyboard.layout.SumirePanelSize(40, 90, 3), panels.right)
+        }
+    }
+
 }
